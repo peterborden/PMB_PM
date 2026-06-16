@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -41,3 +43,25 @@ class BoardResponse(BaseModel):
 class BoardUpdateRequest(BaseModel):
     board: BoardData
     expectedVersion: int | None = None
+
+
+class ChatHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class AIChatRequest(BaseModel):
+    message: str
+    history: list[ChatHistoryMessage] = Field(default_factory=list)
+
+
+class AIChatResponse(BaseModel):
+    reply: str
+    boardUpdated: bool
+    board: BoardData
+    version: int
+
+
+class BoardAssistantOutput(BaseModel):
+    reply: str
+    updatedBoard: BoardData | None = None

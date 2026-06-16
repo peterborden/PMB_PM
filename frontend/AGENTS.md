@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This frontend is a Next.js Kanban UI with a simple sign-in gate. Kanban interactions are still in-memory, while auth state is managed through backend API endpoints.
+This frontend is a Next.js Kanban UI with a simple sign-in gate, backend-backed persistence, and an AI sidebar chat. Auth, board state, and AI chat are managed through backend API endpoints.
 
 ## Stack
 
@@ -19,10 +19,14 @@ This frontend is a Next.js Kanban UI with a simple sign-in gate. Kanban interact
   - Home route that renders `AppShell`
 - `src/components/AppShell.tsx`
   - Auth gate for login/session/logout flows
+  - Loads board data from `/api/board` after authentication
+  - Persists board edits to `/api/board` with version-aware saves
+  - Hosts right-side AI chat panel connected to `/api/ai/chat`
+  - Applies AI-returned board updates and refreshes versioned state
   - Renders login form before board access
   - Renders logout action while authenticated
 - `src/components/KanbanBoard.tsx`
-  - Top-level board state container
+  - Board interaction UI (controlled by parent state)
   - Handles drag start/end and card moves
   - Handles column rename, card add, and card delete
 - `src/components/KanbanColumn.tsx`
@@ -41,6 +45,8 @@ This frontend is a Next.js Kanban UI with a simple sign-in gate. Kanban interact
   - Demo `initialData`
   - `moveCard` logic for within-column and cross-column moves
   - `createId` helper for client-side IDs
+- `src/lib/aiChat.ts`
+  - Chat helper functions for appending and trimming conversation history
 - `src/app/globals.css`
   - Theme tokens matching root project color scheme
 
@@ -49,7 +55,7 @@ This frontend is a Next.js Kanban UI with a simple sign-in gate. Kanban interact
 - `BoardData` is:
   - `columns: Column[]` where each column owns ordered `cardIds`
   - `cards: Record<string, Card>` normalized card map
-- Board state is initialized from static `initialData` and lives only in React state.
+- Board state is loaded from backend API and persisted after edits.
 
 ## Behavior Implemented Today
 
@@ -58,6 +64,10 @@ This frontend is a Next.js Kanban UI with a simple sign-in gate. Kanban interact
 - Session check runs on page load to preserve refresh state
 - Logout returns the user to the login screen
 - Kanban board renders only after authentication
+- Board data loads from backend and persists edits via API
+- Save and sync errors are surfaced in simple inline status messaging
+- Sidebar chat supports conversational requests with loading/error handling
+- AI replies appear in thread and AI-driven board updates apply automatically
 - Five fixed initial columns are shown
 - Column names can be edited inline
 - Cards can be:
@@ -70,17 +80,16 @@ This frontend is a Next.js Kanban UI with a simple sign-in gate. Kanban interact
 ## Tests Present
 
 - Unit/integration:
+  - `src/lib/aiChat.test.ts`: chat helper behavior
   - `src/lib/kanban.test.ts`: `moveCard` behavior
   - `src/components/KanbanBoard.test.tsx`: render, rename, add/remove card
-  - `src/components/AppShell.test.tsx`: auth gate/session/login/logout behavior
+  - `src/components/AppShell.test.tsx`: auth gate/session/login/logout and AI chat updates
 - E2E:
-  - `tests/kanban.spec.ts`: login success/failure, refresh persistence, logout, board interactions
+  - `tests/kanban.spec.ts`: login success/failure, refresh persistence, logout, board interactions, AI update flow
 
 ## Current Limitations
 
-- Board data is not yet wired to backend `/api/board` endpoints
-- No persistence (state resets on reload)
-- No AI sidebar/chat integration
+- AI responses are text-only in sidebar (no markdown rendering/tool outputs yet)
 
 ## Notes for Next Phases
 

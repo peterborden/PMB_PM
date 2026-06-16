@@ -2,12 +2,15 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/AppShell";
+import { initialData } from "@/lib/kanban";
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+
+const boardPayload = () => ({ board: initialData, version: 1 });
 
 describe("AppShell", () => {
   afterEach(() => {
@@ -30,7 +33,8 @@ describe("AppShell", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ authenticated: false }))
-      .mockResolvedValueOnce(jsonResponse({ authenticated: true }));
+      .mockResolvedValueOnce(jsonResponse({ authenticated: true }))
+      .mockResolvedValueOnce(jsonResponse(boardPayload()));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<AppShell />);
@@ -71,6 +75,7 @@ describe("AppShell", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ authenticated: true }))
+      .mockResolvedValueOnce(jsonResponse(boardPayload()))
       .mockResolvedValueOnce(jsonResponse({ authenticated: false }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -80,5 +85,51 @@ describe("AppShell", () => {
     await user.click(await screen.findByRole("button", { name: "Log out" }));
 
     expect(await screen.findByRole("heading", { name: "Sign in" })).toBeVisible();
+  });
+
+  it("sends chat and applies AI board update", async () => {
+    const updatedBoard = {
+      ...initialData,
+      columns: initialData.columns.map((column) =>
+        column.id === "col-backlog" ? { ...column, title: "AI Backlog" } : column
+      ),
+    };
+
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/api/auth/session")) {
+          return jsonResponse({ authenticated: true });
+        }
+        if (url.endsWith("/api/board")) {
+          return jsonResponse(boardPayload());
+        }
+        if (url.endsWith("/api/ai/chat")) {
+          expect(init?.method).toBe("POST");
+          return jsonResponse({
+            reply: "Renamed backlog column.",
+            boardUpdated: true,
+            board: updatedBoard,
+            version: 2,
+          });
+        }
+        if (url.endsWith("/api/auth/logout")) {
+          return jsonResponse({ authenticated: false });
+        }
+        return jsonResponse({}, 404);
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AppShell />);
+    expect(await screen.findByRole("heading", { name: "Kanban Studio" })).toBeVisible();
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Ask AI"), "Rename backlog");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Renamed backlog column.")).toBeVisible();
+    const columnInputs = await screen.findAllByLabelText("Column title");
+    expect(columnInputs[0]).toHaveValue("AI Backlog");
   });
 });

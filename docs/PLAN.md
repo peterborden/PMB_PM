@@ -145,16 +145,16 @@ This plan is execution-oriented and designed for incremental delivery with tests
 
 ### Checklist
 
-- [ ] Replace in-memory frontend board state initialization with backend fetch
-- [ ] Persist all board edits through backend API
-- [ ] Handle loading/error states with simple UX
-- [ ] Keep drag/drop/add/delete/rename behavior consistent
+- [x] Replace in-memory frontend board state initialization with backend fetch
+- [x] Persist all board edits through backend API
+- [x] Handle loading/error states with simple UX
+- [x] Keep drag/drop/add/delete/rename behavior consistent
 
 ### Tests
 
-- [ ] Unit: data mapping and API client helpers
-- [ ] Integration: component tests with mocked API success/failure
-- [ ] E2E: real persistence through reload/restart scenarios
+- [x] Unit: data mapping and API client helpers
+- [x] Integration: component tests with mocked API success/failure
+- [x] E2E: real persistence through reload/restart scenarios
 
 ### Success Criteria
 
@@ -165,16 +165,16 @@ This plan is execution-oriented and designed for incremental delivery with tests
 
 ### Checklist
 
-- [ ] Add backend AI client configured by `OPENROUTER_API_KEY`
-- [ ] Use model `openai/gpt-oss-120b`
-- [ ] Implement simple diagnostic route/task that asks AI `2+2`
-- [ ] Add robust timeout and error reporting for AI calls
+- [x] Add backend AI client configured by `OPENROUTER_API_KEY`
+- [x] Use model `openai/gpt-oss-120b`
+- [x] Implement simple diagnostic route/task that asks AI `2+2`
+- [x] Add robust timeout and error reporting for AI calls
 
 ### Tests
 
-- [ ] Unit: AI client request builder and response parser
-- [ ] Integration: mocked OpenRouter interaction tests
-- [ ] E2E: optional live connectivity smoke test (env-gated)
+- [x] Unit: AI client request builder and response parser
+- [x] Integration: mocked OpenRouter interaction tests
+- [x] E2E: optional live connectivity smoke test (env-gated)
 
 ### Success Criteria
 
@@ -185,19 +185,19 @@ This plan is execution-oriented and designed for incremental delivery with tests
 
 ### Checklist
 
-- [ ] Propose structured output schema for:
-  - [ ] Assistant reply text
-  - [ ] Optional board update instruction payload
-- [ ] Add conversation history handling in backend AI request flow
-- [ ] Include full board JSON context in AI prompt input
-- [ ] Validate structured output before applying board updates
-- [ ] Document contract and examples in `docs/`
+- [x] Propose structured output schema for:
+  - [x] Assistant reply text
+  - [x] Optional board update instruction payload
+- [x] Add conversation history handling in backend AI request flow
+- [x] Include full board JSON context in AI prompt input
+- [x] Validate structured output before applying board updates
+- [x] Document contract and examples in `docs/`
 
 ### Tests
 
-- [ ] Unit: schema validation and update-application logic
-- [ ] Integration: backend route with mocked structured AI responses
-- [ ] E2E: chat prompt yielding no-op and update responses
+- [x] Unit: schema validation and update-application logic
+- [x] Integration: backend route with mocked structured AI responses
+- [x] E2E: chat prompt yielding no-op and update responses
 
 ### Success Criteria
 
@@ -208,17 +208,17 @@ This plan is execution-oriented and designed for incremental delivery with tests
 
 ### Checklist
 
-- [ ] Build right-sidebar chat widget integrated with backend chat route
-- [ ] Show conversation history in UI with clear loading states
-- [ ] Apply AI-provided board updates automatically after successful responses
-- [ ] Refresh UI state from canonical backend response after updates
-- [ ] Keep layout polished and consistent with color/theme requirements
+- [x] Build right-sidebar chat widget integrated with backend chat route
+- [x] Show conversation history in UI with clear loading states
+- [x] Apply AI-provided board updates automatically after successful responses
+- [x] Refresh UI state from canonical backend response after updates
+- [x] Keep layout polished and consistent with color/theme requirements
 
 ### Tests
 
-- [ ] Unit: chat state reducer/helpers
-- [ ] Integration: sidebar + board interaction tests
-- [ ] E2E: user asks AI to modify board and UI updates automatically
+- [x] Unit: chat state reducer/helpers
+- [x] Integration: sidebar + board interaction tests
+- [x] E2E: user asks AI to modify board and UI updates automatically
 
 ### Success Criteria
 

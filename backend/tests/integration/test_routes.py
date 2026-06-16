@@ -2,6 +2,7 @@ import copy
 
 from fastapi.testclient import TestClient
 
+from app.ai import AIRequestError
 from app.main import create_app
 from app.repository import DEFAULT_BOARD
 
@@ -23,6 +24,25 @@ def _build_frontend_fixture(tmp_path):
     assets_dir.mkdir(parents=True)
     (assets_dir / "app.js").write_text("console.log('ok');", encoding="utf-8")
     return static_dir
+
+
+class FakeAIClient:
+    def __init__(self, result=None, error: Exception | None = None):
+        self.result = result or {"model": "openai/gpt-oss-120b", "prompt": "2+2", "answer": "4"}
+        self.error = error
+
+    def run_diagnostic(self):
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+    def run_board_assistant(self, board, history, user_message):
+        if self.error is not None:
+            raise self.error
+        return {
+            "reply": f"Handled: {user_message}",
+            "updatedBoard": None,
+        }
 
 
 def test_root_serves_frontend_index(tmp_path) -> None:
@@ -199,3 +219,100 @@ def test_board_persists_across_app_instances(tmp_path) -> None:
     client_b.post("/api/auth/login", json={"username": "user", "password": "password"})
     persisted_payload = client_b.get("/api/board").json()
     assert persisted_payload["board"]["columns"][1]["title"] == "Persisted Discovery"
+
+
+def test_ai_diagnostic_requires_authentication() -> None:
+    client = TestClient(create_app(ai_client=FakeAIClient()))
+    response = client.get("/api/ai/diagnostic")
+    assert response.status_code == 401
+
+
+def test_ai_diagnostic_returns_result_when_authenticated() -> None:
+    client = TestClient(create_app(ai_client=FakeAIClient()))
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+    response = client.get("/api/ai/diagnostic")
+    assert response.status_code == 200
+    assert response.json() == {
+        "model": "openai/gpt-oss-120b",
+        "prompt": "2+2",
+        "answer": "4",
+    }
+
+
+def test_ai_diagnostic_surfaces_request_errors() -> None:
+    client = TestClient(
+        create_app(ai_client=FakeAIClient(error=AIRequestError("upstream failed")))
+    )
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+    response = client.get("/api/ai/diagnostic")
+    assert response.status_code == 502
+    assert response.json()["detail"] == "upstream failed"
+
+
+def test_ai_diagnostic_returns_503_when_key_missing(monkeypatch) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    client = TestClient(create_app(ai_client=None))
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+    response = client.get("/api/ai/diagnostic")
+    assert response.status_code == 503
+
+
+def test_ai_chat_requires_authentication(tmp_path) -> None:
+    client = TestClient(create_app(ai_client=FakeAIClient(), db_path=tmp_path / "test.db"))
+    response = client.post("/api/ai/chat", json={"message": "hello"})
+    assert response.status_code == 401
+
+
+def test_ai_chat_returns_reply_without_board_update(tmp_path) -> None:
+    client = TestClient(create_app(ai_client=FakeAIClient(), db_path=tmp_path / "test.db"))
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+    board_before = client.get("/api/board").json()
+
+    response = client.post(
+        "/api/ai/chat",
+        json={
+            "message": "what should I do?",
+            "history": [{"role": "user", "content": "previous question"}],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["boardUpdated"] is False
+    assert payload["version"] == board_before["version"]
+    assert payload["reply"] == "Handled: what should I do?"
+
+
+def test_ai_chat_can_apply_board_update(tmp_path) -> None:
+    class UpdatingAIClient(FakeAIClient):
+        def run_board_assistant(self, board, history, user_message):
+            updated = copy.deepcopy(board)
+            updated["columns"][0]["title"] = "AI Backlog"
+            return {
+                "reply": "Updated board",
+                "updatedBoard": updated,
+            }
+
+    client = TestClient(create_app(ai_client=UpdatingAIClient(), db_path=tmp_path / "test.db"))
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+    response = client.post("/api/ai/chat", json={"message": "rename backlog"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["boardUpdated"] is True
+    assert payload["board"]["columns"][0]["title"] == "AI Backlog"
+    assert payload["version"] == 2
+
+    persisted = client.get("/api/board").json()
+    assert persisted["board"]["columns"][0]["title"] == "AI Backlog"
+
+
+def test_ai_chat_surfaces_upstream_errors(tmp_path) -> None:
+    client = TestClient(
+        create_app(
+            ai_client=FakeAIClient(error=AIRequestError("ai failed")),
+            db_path=tmp_path / "test.db",
+        )
+    )
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+    response = client.post("/api/ai/chat", json={"message": "hello"})
+    assert response.status_code == 502
+    assert response.json()["detail"] == "ai failed"
