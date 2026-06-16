@@ -1,6 +1,9 @@
+import copy
+
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.repository import DEFAULT_BOARD
 
 
 def _build_frontend_fixture(tmp_path):
@@ -121,3 +124,78 @@ def test_hello_returns_message_after_login() -> None:
     response = client.get("/api/hello")
     assert response.status_code == 200
     assert response.json() == {"message": "hello world"}
+
+
+def test_board_endpoint_requires_authentication() -> None:
+    client = TestClient(create_app())
+    response = client.get("/api/board")
+    assert response.status_code == 401
+
+
+def test_board_endpoint_returns_seeded_board(tmp_path) -> None:
+    db_path = tmp_path / "test.db"
+    client = TestClient(create_app(db_path=db_path))
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+
+    response = client.get("/api/board")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["version"] == 1
+    assert payload["board"]["columns"][0]["title"] == "Backlog"
+    assert db_path.exists()
+
+
+def test_update_board_persists_changes_and_increments_version(tmp_path) -> None:
+    db_path = tmp_path / "test.db"
+    client = TestClient(create_app(db_path=db_path))
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+
+    initial_response = client.get("/api/board")
+    initial_payload = initial_response.json()
+    updated_board = copy.deepcopy(initial_payload["board"])
+    updated_board["columns"][0]["title"] = "New Backlog"
+
+    update_response = client.put(
+        "/api/board",
+        json={"board": updated_board, "expectedVersion": initial_payload["version"]},
+    )
+    assert update_response.status_code == 200
+    update_payload = update_response.json()
+    assert update_payload["version"] == 2
+    assert update_payload["board"]["columns"][0]["title"] == "New Backlog"
+
+    read_response = client.get("/api/board")
+    read_payload = read_response.json()
+    assert read_payload["version"] == 2
+    assert read_payload["board"]["columns"][0]["title"] == "New Backlog"
+
+
+def test_update_board_rejects_version_conflicts(tmp_path) -> None:
+    db_path = tmp_path / "test.db"
+    client = TestClient(create_app(db_path=db_path))
+    client.post("/api/auth/login", json={"username": "user", "password": "password"})
+
+    response = client.put(
+        "/api/board",
+        json={"board": DEFAULT_BOARD, "expectedVersion": 999},
+    )
+    assert response.status_code == 409
+
+
+def test_board_persists_across_app_instances(tmp_path) -> None:
+    db_path = tmp_path / "test.db"
+    client_a = TestClient(create_app(db_path=db_path))
+    client_a.post("/api/auth/login", json={"username": "user", "password": "password"})
+
+    initial_payload = client_a.get("/api/board").json()
+    updated_board = copy.deepcopy(initial_payload["board"])
+    updated_board["columns"][1]["title"] = "Persisted Discovery"
+    client_a.put(
+        "/api/board",
+        json={"board": updated_board, "expectedVersion": initial_payload["version"]},
+    )
+
+    client_b = TestClient(create_app(db_path=db_path))
+    client_b.post("/api/auth/login", json={"username": "user", "password": "password"})
+    persisted_payload = client_b.get("/api/board").json()
+    assert persisted_payload["board"]["columns"][1]["title"] == "Persisted Discovery"

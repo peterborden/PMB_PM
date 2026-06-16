@@ -3,13 +3,18 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel
 
-SESSION_COOKIE_NAME = "pm_session"
-SESSION_COOKIE_VALUE = "authenticated"
-SESSION_MAX_AGE_SECONDS = 60 * 60 * 24
-VALID_USERNAME = "user"
-VALID_PASSWORD = "password"
+from .models import BoardResponse, BoardUpdateRequest
+from .repository import initialize_database
+from .services import (
+    LoginRequest,
+    login,
+    logout,
+    read_board,
+    require_authenticated_username,
+    save_board,
+    session_authenticated,
+)
 
 
 def _default_frontend_static_dir() -> Path:
@@ -48,25 +53,7 @@ def _frontend_unavailable_html() -> str:
 """
 
 
-def _is_authenticated(request: Request) -> bool:
-    return request.cookies.get(SESSION_COOKIE_NAME) == SESSION_COOKIE_VALUE
-
-
-def _require_authenticated(request: Request) -> None:
-    if not _is_authenticated(request):
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-
-def validate_credentials(username: str, password: str) -> bool:
-    return username == VALID_USERNAME and password == VALID_PASSWORD
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-def create_app(frontend_static_dir: Path | None = None) -> FastAPI:
+def create_app(frontend_static_dir: Path | None = None, db_path: Path | None = None) -> FastAPI:
     app = FastAPI(
         title="Project Management MVP Backend",
         version="0.1.0",
@@ -74,6 +61,7 @@ def create_app(frontend_static_dir: Path | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
+    initialize_database(db_path)
     resolved_frontend_dir = _resolve_frontend_static_dir(frontend_static_dir)
 
     @app.get("/api/health")
@@ -82,32 +70,30 @@ def create_app(frontend_static_dir: Path | None = None) -> FastAPI:
 
     @app.get("/api/auth/session")
     def auth_session(request: Request) -> dict[str, bool]:
-        return {"authenticated": _is_authenticated(request)}
+        return {"authenticated": session_authenticated(request)}
 
     @app.post("/api/auth/login")
     def auth_login(payload: LoginRequest, response: Response) -> dict[str, bool]:
-        if not validate_credentials(payload.username, payload.password):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=SESSION_COOKIE_VALUE,
-            httponly=True,
-            samesite="lax",
-            max_age=SESSION_MAX_AGE_SECONDS,
-            path="/",
-        )
+        login(payload, response)
         return {"authenticated": True}
 
     @app.post("/api/auth/logout")
     def auth_logout(response: Response) -> dict[str, bool]:
-        response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+        logout(response)
         return {"authenticated": False}
 
     @app.get("/api/hello")
     def hello(request: Request) -> dict[str, str]:
-        _require_authenticated(request)
+        require_authenticated_username(request)
         return {"message": "hello world"}
+
+    @app.get("/api/board", response_model=BoardResponse)
+    def get_board(request: Request) -> BoardResponse:
+        return read_board(request, db_path=db_path)
+
+    @app.put("/api/board", response_model=BoardResponse)
+    def put_board(request: Request, payload: BoardUpdateRequest) -> BoardResponse:
+        return save_board(request, payload, db_path=db_path)
 
     @app.get("/{path:path}")
     def serve_frontend(path: str = ""):

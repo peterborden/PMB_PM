@@ -15,6 +15,9 @@ const initialForm: LoginForm = {
   password: "",
 };
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const withApiBase = (path: string) => `${API_BASE_URL}${path}`;
+
 export const AppShell = () => {
   const [authState, setAuthState] = useState<AuthState>("loading");
   const [form, setForm] = useState<LoginForm>(initialForm);
@@ -25,7 +28,7 @@ export const AppShell = () => {
     let mounted = true;
     const loadSession = async () => {
       try {
-        const response = await fetch("/api/auth/session", {
+        const response = await fetch(withApiBase("/api/auth/session"), {
           credentials: "same-origin",
         });
         if (!response.ok) {
@@ -56,7 +59,7 @@ export const AppShell = () => {
     setErrorMessage(null);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch(withApiBase("/api/auth/login"), {
         method: "POST",
         credentials: "same-origin",
         headers: {
@@ -85,7 +88,7 @@ export const AppShell = () => {
   const handleLogout = async () => {
     setErrorMessage(null);
     try {
-      await fetch("/api/auth/logout", {
+      await fetch(withApiBase("/api/auth/logout"), {
         method: "POST",
         credentials: "same-origin",
       });

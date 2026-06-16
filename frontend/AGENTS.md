@@ -78,6 +78,7 @@ This frontend is a Next.js Kanban UI with a simple sign-in gate. Kanban interact
 
 ## Current Limitations
 
+- Board data is not yet wired to backend `/api/board` endpoints
 - No persistence (state resets on reload)
 - No AI sidebar/chat integration
 

@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from app.main import _resolve_frontend_static_dir, validate_credentials
+from app.main import _resolve_frontend_static_dir
+from app.services import validate_credentials
 
 
 def test_resolve_frontend_static_dir_requires_index_file(tmp_path: Path) -> None:

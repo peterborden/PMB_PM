@@ -111,9 +111,9 @@ This plan is execution-oriented and designed for incremental delivery with tests
 
 ### Tests
 
-- [ ] Unit: schema validation helpers
-- [ ] Integration: DB initialization and read/write round-trip
-- [ ] E2E: persistence survives app restart
+- [x] Unit: schema validation helpers
+- [x] Integration: DB initialization and read/write round-trip
+- [x] E2E: persistence survives app restart
 
 ### Success Criteria
 
@@ -124,17 +124,17 @@ This plan is execution-oriented and designed for incremental delivery with tests
 
 ### Checklist
 
-- [ ] Implement board read endpoint for current authenticated user
-- [ ] Implement board update endpoint(s) for card/column state changes
-- [ ] Add input validation and clear API error responses
-- [ ] Ensure DB auto-creation and seed behavior on first run
-- [ ] Add API-layer separation (routes, services, data access) with simple structure
+- [x] Implement board read endpoint for current authenticated user
+- [x] Implement board update endpoint(s) for card/column state changes
+- [x] Add input validation and clear API error responses
+- [x] Ensure DB auto-creation and seed behavior on first run
+- [x] Add API-layer separation (routes, services, data access) with simple structure
 
 ### Tests
 
-- [ ] Unit: service-layer board transformation and validation behavior
-- [ ] Integration: API + DB end-to-end contract tests
-- [ ] E2E: authenticated API usage from realistic client flow
+- [x] Unit: service-layer board transformation and validation behavior
+- [x] Integration: API + DB end-to-end contract tests
+- [x] E2E: authenticated API usage from realistic client flow
 
 ### Success Criteria
 
