@@ -20,6 +20,10 @@ const initialForm: LoginForm = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const withApiBase = (path: string) => `${API_BASE_URL}${path}`;
 
+// Text edits (column rename) persist on a trailing debounce so typing does not
+// fire a board save per keystroke.
+const SAVE_DEBOUNCE_MS = 500;
+
 type BoardApiPayload = {
   board: BoardData;
   version: number;
@@ -38,7 +42,6 @@ export const AppShell = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [board, setBoard] = useState<BoardData | null>(null);
-  const [boardVersion, setBoardVersion] = useState<number | null>(null);
   const [boardLoadError, setBoardLoadError] = useState<string | null>(null);
   const [isSavingBoard, setIsSavingBoard] = useState(false);
   const [boardSyncError, setBoardSyncError] = useState<string | null>(null);
@@ -47,11 +50,19 @@ export const AppShell = () => {
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
+  // Synchronous source of truth for the board version used as expectedVersion on
+  // saves. Kept in a ref (not state) so chained saves never read a stale value.
   const boardVersionRef = useRef<number | null>(null);
+  const renameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<BoardData | null>(null);
 
   useEffect(() => {
-    boardVersionRef.current = boardVersion;
-  }, [boardVersion]);
+    return () => {
+      if (renameDebounceRef.current) {
+        clearTimeout(renameDebounceRef.current);
+      }
+    };
+  }, []);
 
   const loadBoard = useCallback(async () => {
     setBoardLoadError(null);
@@ -64,7 +75,7 @@ export const AppShell = () => {
       }
       const payload = (await response.json()) as BoardApiPayload;
       setBoard(payload.board);
-      setBoardVersion(payload.version);
+      boardVersionRef.current = payload.version;
       setBoardSyncError(null);
     } catch {
       setBoardLoadError("Unable to load board. Please try again.");
@@ -147,8 +158,13 @@ export const AppShell = () => {
         credentials: "same-origin",
       });
     } finally {
+      if (renameDebounceRef.current) {
+        clearTimeout(renameDebounceRef.current);
+        renameDebounceRef.current = null;
+      }
+      pendingSaveRef.current = null;
       setBoard(null);
-      setBoardVersion(null);
+      boardVersionRef.current = null;
       setBoardLoadError(null);
       setBoardSyncError(null);
       setChatMessages([]);
@@ -158,11 +174,8 @@ export const AppShell = () => {
     }
   };
 
-  const persistBoardUpdate = useCallback(
+  const enqueueSave = useCallback(
     (nextBoard: BoardData) => {
-      setBoard(nextBoard);
-      setBoardSyncError(null);
-
       saveQueueRef.current = saveQueueRef.current
         .then(async () => {
           const expectedVersion = boardVersionRef.current;
@@ -195,7 +208,9 @@ export const AppShell = () => {
 
           const payload = (await response.json()) as BoardApiPayload;
           setBoard(payload.board);
-          setBoardVersion(payload.version);
+          // Update the version ref synchronously so the next queued save sends a
+          // current expectedVersion instead of waiting for a re-render.
+          boardVersionRef.current = payload.version;
         })
         .catch(() => {
           setBoardSyncError("Unable to save board changes.");
@@ -205,6 +220,49 @@ export const AppShell = () => {
         });
     },
     [loadBoard]
+  );
+
+  // Persist any debounced edit immediately (e.g. before sending an AI request so
+  // the assistant sees the latest board).
+  const flushPendingSave = useCallback(() => {
+    if (renameDebounceRef.current) {
+      clearTimeout(renameDebounceRef.current);
+      renameDebounceRef.current = null;
+    }
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (pending) {
+      enqueueSave(pending);
+    }
+  }, [enqueueSave]);
+
+  const persistBoardUpdate = useCallback(
+    (nextBoard: BoardData, options?: { debounce?: boolean }) => {
+      setBoard(nextBoard);
+      setBoardSyncError(null);
+
+      if (renameDebounceRef.current) {
+        clearTimeout(renameDebounceRef.current);
+        renameDebounceRef.current = null;
+      }
+
+      if (options?.debounce) {
+        pendingSaveRef.current = nextBoard;
+        renameDebounceRef.current = setTimeout(() => {
+          renameDebounceRef.current = null;
+          const pending = pendingSaveRef.current;
+          pendingSaveRef.current = null;
+          if (pending) {
+            enqueueSave(pending);
+          }
+        }, SAVE_DEBOUNCE_MS);
+        return;
+      }
+
+      pendingSaveRef.current = null;
+      enqueueSave(nextBoard);
+    },
+    [enqueueSave]
   );
 
   const handleSendChat = async (event: FormEvent<HTMLFormElement>) => {
@@ -220,7 +278,9 @@ export const AppShell = () => {
     setIsSendingChat(true);
 
     try {
-      // Keep board write ordering stable: wait for queued manual saves before asking AI.
+      // Keep board write ordering stable: flush any debounced edit, then wait for
+      // queued saves before asking AI so it operates on the latest board.
+      flushPendingSave();
       await saveQueueRef.current;
 
       const history = trimChatHistory(chatMessages);
@@ -243,7 +303,7 @@ export const AppShell = () => {
       const payload = (await response.json()) as AIChatPayload;
       setChatMessages((prev) => appendMessage(prev, "assistant", payload.reply));
       setBoard(payload.board);
-      setBoardVersion(payload.version);
+      boardVersionRef.current = payload.version;
       setBoardSyncError(null);
     } catch {
       setChatError("Unable to complete AI chat request.");

@@ -20,7 +20,10 @@ import { createId, moveCard, type BoardData } from "@/lib/kanban";
 
 type KanbanBoardProps = {
   board: BoardData;
-  onBoardChange: (nextBoard: BoardData) => void;
+  onBoardChange: (
+    nextBoard: BoardData,
+    options?: { debounce?: boolean }
+  ) => void;
   isSaving?: boolean;
   syncError?: string | null;
 };
@@ -74,12 +77,15 @@ export const KanbanBoard = ({
   };
 
   const handleRenameColumn = (columnId: string, title: string) => {
-    onBoardChange({
-      ...board,
-      columns: board.columns.map((column) =>
-        column.id === columnId ? { ...column, title } : column
-      ),
-    });
+    onBoardChange(
+      {
+        ...board,
+        columns: board.columns.map((column) =>
+          column.id === columnId ? { ...column, title } : column
+        ),
+      },
+      { debounce: true }
+    );
   };
 
   const handleAddCard = (columnId: string, title: string, details: string) => {

@@ -42,7 +42,7 @@ start_local() {
   }
 
   start_process "backend" "cd \"$ROOT_DIR\" && uv run --project backend uvicorn backend.app.main:app --host 127.0.0.1 --port 8000"
-  start_process "frontend" "cd \"$ROOT_DIR/frontend\" && NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 npm run dev -- --hostname 127.0.0.1 --port 3000"
+  start_process "frontend" "cd \"$ROOT_DIR/frontend\" && npm run dev -- --hostname 127.0.0.1 --port 3000"
   echo "Local services started:"
   echo "  Backend:  http://127.0.0.1:8000"
   echo "  Frontend: http://127.0.0.1:3000"

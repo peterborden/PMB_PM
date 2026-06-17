@@ -161,7 +161,11 @@ class OpenRouterClient:
         messages.extend(history)
         messages.append({"role": "user", "content": prompt})
 
-        raw_text = self._ask_messages(messages)
+        # Ask for a JSON object response; _parse_json_from_text still tolerates
+        # fenced or wrapped output if the model ignores the hint.
+        raw_text = self._ask_messages(
+            messages, response_format={"type": "json_object"}
+        )
         payload = _parse_json_from_text(raw_text)
         parsed = BoardAssistantOutput.model_validate(payload)
         return parsed.model_dump()
@@ -170,12 +174,18 @@ class OpenRouterClient:
         payload = build_chat_payload(self.model, prompt)
         return self._post_chat(payload)
 
-    def _ask_messages(self, messages: list[dict[str, str]]) -> str:
-        payload = {
+    def _ask_messages(
+        self,
+        messages: list[dict[str, str]],
+        response_format: dict[str, Any] | None = None,
+    ) -> str:
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": 0,
         }
+        if response_format is not None:
+            payload["response_format"] = response_format
         return self._post_chat(payload)
 
     def _post_chat(self, payload: dict[str, Any]) -> str:

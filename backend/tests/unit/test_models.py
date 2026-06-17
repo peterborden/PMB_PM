@@ -26,3 +26,31 @@ def test_board_model_rejects_card_key_mismatch() -> None:
 
     with pytest.raises(ValueError):
         BoardData.model_validate(invalid_board)
+
+
+def test_board_model_rejects_duplicate_column_ids() -> None:
+    invalid_board = copy.deepcopy(DEFAULT_BOARD)
+    invalid_board["columns"][1]["id"] = invalid_board["columns"][0]["id"]
+
+    with pytest.raises(ValueError, match="Duplicate column ids"):
+        BoardData.model_validate(invalid_board)
+
+
+def test_board_model_rejects_card_in_multiple_columns() -> None:
+    invalid_board = copy.deepcopy(DEFAULT_BOARD)
+    invalid_board["columns"][1]["cardIds"].append("card-1")
+
+    with pytest.raises(ValueError, match="multiple columns"):
+        BoardData.model_validate(invalid_board)
+
+
+def test_board_model_rejects_orphan_cards() -> None:
+    invalid_board = copy.deepcopy(DEFAULT_BOARD)
+    invalid_board["cards"]["card-orphan"] = {
+        "id": "card-orphan",
+        "title": "Orphan",
+        "details": "Not placed in any column.",
+    }
+
+    with pytest.raises(ValueError, match="not placed in any column"):
+        BoardData.model_validate(invalid_board)
