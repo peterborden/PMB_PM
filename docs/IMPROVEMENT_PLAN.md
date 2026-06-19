@@ -30,10 +30,12 @@ tree green (`uv run --project backend pytest`, `npm run test:unit` in
     longer calls the legacy `/api/board` route.
   - Tests: rewrote `AppShell.test.tsx` (in-memory server) + `BoardSwitcher.test.tsx`
     + updated Playwright `kanban.spec.ts` to the new endpoints. 21 unit + 8 e2e green.
-- [ ] **Iteration 4 — Card-level features**
-  - Candidates: card labels/tags, due dates, assignee, description markdown,
-    card search/filter. Extend `BoardData` (keep the shared shape in sync across
-    frontend, API, AI contract) and migrate `board_json` defensively.
+- [x] **Loop 3 — Card-level features (commit pending)**
+  - Card `labels[]` + `dueDate` added to the shared model (validated, backward
+    compatible); AI prompt + AI_CONTRACT updated; label chips + overdue due-date
+    badge; creation form inputs; board search filtering by title/details/labels.
+  - Still open here: editing an existing card's labels/dueDate in the UI (only
+    creation + AI can set them today); assignee; description markdown.
 - [ ] **Iteration 5 — Hardening + e2e**
   - Playwright flows for register -> create board -> drag cards -> AI edit.
   - Backend e2e for multi-user. Tighten coverage of new code paths.

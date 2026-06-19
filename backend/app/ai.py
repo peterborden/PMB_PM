@@ -141,6 +141,11 @@ class OpenRouterClient:
             "You are a kanban assistant. "
             "Return ONLY valid JSON with shape: "
             '{"reply":"string","updatedBoard":<board object or null>}. '
+            "A board has columns (each with id, title, cardIds) and a cards map. "
+            "Each card has id, title, details, an optional labels array of short "
+            'text tags, and an optional dueDate as an ISO date string "YYYY-MM-DD" '
+            "(or null). Preserve any existing labels and dueDate unless the user "
+            "asks to change them. "
             "If no board change is needed, set updatedBoard to null."
         )
         board_context = json.dumps(board, ensure_ascii=True, separators=(",", ":"))

@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -84,10 +85,50 @@ class BoardListResponse(BaseModel):
     boards: list[BoardMeta]
 
 
+CARD_MAX_LABELS = 10
+CARD_LABEL_MAX_LENGTH = 24
+
+
 class Card(BaseModel):
     id: str
     title: str
     details: str
+    # Optional metadata. Defaults keep older board_json (without these keys)
+    # valid, so the fields are backward compatible.
+    labels: list[str] = Field(default_factory=list)
+    dueDate: str | None = None
+
+    @field_validator("labels")
+    @classmethod
+    def _normalize_labels(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for label in value:
+            trimmed = label.strip()
+            if not trimmed or trimmed in cleaned:
+                continue
+            if len(trimmed) > CARD_LABEL_MAX_LENGTH:
+                raise ValueError(
+                    f"Label must be at most {CARD_LABEL_MAX_LENGTH} characters"
+                )
+            cleaned.append(trimmed)
+        if len(cleaned) > CARD_MAX_LABELS:
+            raise ValueError(f"A card may have at most {CARD_MAX_LABELS} labels")
+        return cleaned
+
+    @field_validator("dueDate")
+    @classmethod
+    def _normalize_due_date(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        # Expect an ISO calendar date (YYYY-MM-DD), the shape an <input type=date> emits.
+        try:
+            date.fromisoformat(trimmed)
+        except ValueError as error:
+            raise ValueError("dueDate must be an ISO date (YYYY-MM-DD)") from error
+        return trimmed
 
 
 class Column(BaseModel):

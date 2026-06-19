@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { KanbanBoard } from "@/components/KanbanBoard";
@@ -49,5 +49,39 @@ describe("KanbanBoard", () => {
     await userEvent.click(deleteButton);
 
     expect(within(column).queryByText("New card")).not.toBeInTheDocument();
+  });
+
+  it("adds a card with labels and a due date", async () => {
+    render(<KanbanBoardHarness />);
+    const column = getFirstColumn();
+    await userEvent.click(
+      within(column).getByRole("button", { name: /add a card/i })
+    );
+
+    await userEvent.type(
+      within(column).getByPlaceholderText(/card title/i),
+      "Tagged card"
+    );
+    await userEvent.type(within(column).getByLabelText("Labels"), "urgent, backend");
+    fireEvent.change(within(column).getByLabelText("Due date"), {
+      target: { value: "2026-07-01" },
+    });
+    await userEvent.click(within(column).getByRole("button", { name: /add card/i }));
+
+    const card = within(column).getByText("Tagged card").closest("article")!;
+    expect(within(card).getByText("urgent")).toBeInTheDocument();
+    expect(within(card).getByText("backend")).toBeInTheDocument();
+    expect(within(card).getByTestId("card-due-date")).toHaveTextContent("Jul 1");
+  });
+
+  it("filters cards with the search box", async () => {
+    render(<KanbanBoardHarness />);
+    expect(screen.getByText("Align roadmap themes")).toBeInTheDocument();
+    expect(screen.getByText("Gather customer signals")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Search cards"), "roadmap");
+
+    expect(screen.getByText("Align roadmap themes")).toBeInTheDocument();
+    expect(screen.queryByText("Gather customer signals")).not.toBeInTheDocument();
   });
 });

@@ -6,7 +6,8 @@ Define the backend contract for AI chat so responses are structured, validated, 
 
 ## Backend Route
 
-- `POST /api/ai/chat` (authenticated)
+- `POST /api/boards/{board_id}/ai/chat` (authenticated) — operates on the given board
+- `POST /api/ai/chat` (authenticated) — legacy alias that targets the user's default board
 
 The backend always includes:
 
@@ -43,7 +44,13 @@ The model is instructed to return JSON with this shape:
       { "id": "string", "title": "string", "cardIds": ["string"] }
     ],
     "cards": {
-      "card-id": { "id": "string", "title": "string", "details": "string" }
+      "card-id": {
+        "id": "string",
+        "title": "string",
+        "details": "string",
+        "labels": ["string"],
+        "dueDate": "YYYY-MM-DD or null"
+      }
     }
   }
 }

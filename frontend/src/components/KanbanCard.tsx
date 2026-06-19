@@ -2,6 +2,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import clsx from "clsx";
 import type { Card } from "@/lib/kanban";
+import { CardMeta } from "@/components/CardMeta";
 import { TrashIcon } from "@/components/icons";
 
 type KanbanCardProps = {
@@ -49,6 +50,7 @@ export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
       <p className="mt-1.5 text-xs leading-5 text-[var(--gray-text)]">
         {card.details}
       </p>
+      <CardMeta card={card} />
     </article>
   );
 };

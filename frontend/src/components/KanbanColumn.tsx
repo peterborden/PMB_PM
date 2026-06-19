@@ -9,7 +9,13 @@ type KanbanColumnProps = {
   column: Column;
   cards: Card[];
   onRename: (columnId: string, title: string) => void;
-  onAddCard: (columnId: string, title: string, details: string) => void;
+  onAddCard: (
+    columnId: string,
+    title: string,
+    details: string,
+    labels: string[],
+    dueDate: string | null
+  ) => void;
   onDeleteCard: (columnId: string, cardId: string) => void;
 };
 
@@ -60,7 +66,9 @@ export const KanbanColumn = ({
         )}
       </div>
       <NewCardForm
-        onAdd={(title, details) => onAddCard(column.id, title, details)}
+        onAdd={(title, details, labels, dueDate) =>
+          onAddCard(column.id, title, details, labels, dueDate)
+        }
       />
     </section>
   );

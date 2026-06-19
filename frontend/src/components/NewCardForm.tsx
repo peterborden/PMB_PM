@@ -1,10 +1,29 @@
 import { useState, type FormEvent } from "react";
 import { PlusIcon } from "@/components/icons";
 
-const initialFormState = { title: "", details: "" };
+const initialFormState = { title: "", details: "", labels: "", dueDate: "" };
 
 type NewCardFormProps = {
-  onAdd: (title: string, details: string) => void;
+  onAdd: (
+    title: string,
+    details: string,
+    labels: string[],
+    dueDate: string | null
+  ) => void;
+};
+
+const parseLabels = (raw: string): string[] => {
+  const seen = new Set<string>();
+  return raw
+    .split(",")
+    .map((label) => label.trim())
+    .filter((label) => {
+      if (!label || seen.has(label)) {
+        return false;
+      }
+      seen.add(label);
+      return true;
+    });
 };
 
 export const NewCardForm = ({ onAdd }: NewCardFormProps) => {
@@ -16,7 +35,12 @@ export const NewCardForm = ({ onAdd }: NewCardFormProps) => {
     if (!formState.title.trim()) {
       return;
     }
-    onAdd(formState.title.trim(), formState.details.trim());
+    onAdd(
+      formState.title.trim(),
+      formState.details.trim(),
+      parseLabels(formState.labels),
+      formState.dueDate ? formState.dueDate : null
+    );
     setFormState(initialFormState);
     setIsOpen(false);
   };
@@ -42,6 +66,24 @@ export const NewCardForm = ({ onAdd }: NewCardFormProps) => {
             placeholder="Details"
             rows={3}
             className="w-full resize-none rounded-xl border border-[var(--stroke)] bg-white px-3 py-2 text-sm text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)]"
+          />
+          <input
+            value={formState.labels}
+            onChange={(event) =>
+              setFormState((prev) => ({ ...prev, labels: event.target.value }))
+            }
+            placeholder="Labels (comma separated)"
+            aria-label="Labels"
+            className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2 text-sm text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)]"
+          />
+          <input
+            type="date"
+            value={formState.dueDate}
+            onChange={(event) =>
+              setFormState((prev) => ({ ...prev, dueDate: event.target.value }))
+            }
+            aria-label="Due date"
+            className="w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2 text-sm text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)]"
           />
           <div className="flex items-center gap-2">
             <button

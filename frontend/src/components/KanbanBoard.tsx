@@ -18,7 +18,12 @@ import clsx from "clsx";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { CheckIcon, SpinnerIcon } from "@/components/icons";
-import { createId, moveCard, type BoardData } from "@/lib/kanban";
+import {
+  cardMatchesQuery,
+  createId,
+  moveCard,
+  type BoardData,
+} from "@/lib/kanban";
 
 type KanbanBoardProps = {
   board: BoardData;
@@ -56,6 +61,7 @@ export const KanbanBoard = ({
   };
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -96,13 +102,19 @@ export const KanbanBoard = ({
     );
   };
 
-  const handleAddCard = (columnId: string, title: string, details: string) => {
+  const handleAddCard = (
+    columnId: string,
+    title: string,
+    details: string,
+    labels: string[],
+    dueDate: string | null
+  ) => {
     const id = createId("card");
     onBoardChange({
       ...board,
       cards: {
         ...board.cards,
-        [id]: { id, title, details: details || "No details yet." },
+        [id]: { id, title, details: details || "No details yet.", labels, dueDate },
       },
       columns: board.columns.map((column) =>
         column.id === columnId
@@ -131,6 +143,7 @@ export const KanbanBoard = ({
   };
 
   const activeCard = activeCardId ? cardsById[activeCardId] : null;
+  const trimmedQuery = query.trim();
 
   return (
     <div className="relative overflow-hidden">
@@ -159,6 +172,14 @@ export const KanbanBoard = ({
             </div>
           ) : null}
           <div className="flex items-center gap-4">
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search cards..."
+              aria-label="Search cards"
+              className="w-44 rounded-full border border-[var(--stroke)] bg-white px-3.5 py-1.5 text-sm outline-none transition focus:border-[var(--primary-blue)]"
+            />
             {syncError ? (
               <p className="text-sm font-medium text-red-600">{syncError}</p>
             ) : null}
@@ -187,16 +208,27 @@ export const KanbanBoard = ({
           onDragEnd={handleDragEnd}
         >
           <section className="grid flex-1 grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-            {board.columns.map((column) => (
-              <KanbanColumn
-                key={column.id}
-                column={column}
-                cards={column.cardIds.map((cardId) => board.cards[cardId])}
-                onRename={handleRenameColumn}
-                onAddCard={handleAddCard}
-                onDeleteCard={handleDeleteCard}
-              />
-            ))}
+            {board.columns.map((column) => {
+              const columnCards = column.cardIds.map((cardId) => board.cards[cardId]);
+              const visibleCards = trimmedQuery
+                ? columnCards.filter((card) => cardMatchesQuery(card, trimmedQuery))
+                : columnCards;
+              // When searching, narrow the sortable context to the matching cards
+              // so the drag list and the rendered cards stay in sync.
+              const visibleColumn = trimmedQuery
+                ? { ...column, cardIds: visibleCards.map((card) => card.id) }
+                : column;
+              return (
+                <KanbanColumn
+                  key={column.id}
+                  column={visibleColumn}
+                  cards={visibleCards}
+                  onRename={handleRenameColumn}
+                  onAddCard={handleAddCard}
+                  onDeleteCard={handleDeleteCard}
+                />
+              );
+            })}
           </section>
           <DragOverlay>
             {activeCard ? (
