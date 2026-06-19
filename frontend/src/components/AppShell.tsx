@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { KanbanBoard } from "@/components/KanbanBoard";
+import { LogoutIcon, SendIcon, SparkleIcon } from "@/components/icons";
 import type { BoardData } from "@/lib/kanban";
 import { appendMessage, trimChatHistory, type ChatMessage } from "@/lib/aiChat";
 
@@ -437,29 +438,35 @@ export const AppShell = () => {
         syncError={boardSyncError}
       />
       <aside className="fixed inset-y-0 right-0 flex w-[360px] flex-col border-l border-[var(--stroke)] bg-white shadow-[-8px_0_18px_rgba(3,33,71,0.06)]">
-        <div className="border-b border-[var(--stroke)] p-5">
-          <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--stroke)] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--secondary-purple)]/10 text-[var(--secondary-purple)]">
+              <SparkleIcon className="h-5 w-5" />
+            </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
+              <h2 className="font-display text-lg font-semibold leading-tight text-[var(--navy-dark)]">
                 AI Assistant
-              </p>
-              <h2 className="mt-2 font-display text-xl font-semibold text-[var(--navy-dark)]">
-                Kanban Chat
               </h2>
+              <p className="text-xs font-medium text-[var(--gray-text)]">
+                Reads and rewrites your board
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-full border border-[var(--stroke)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--navy-dark)] transition hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)]"
-            >
-              Log out
-            </button>
           </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            aria-label="Log out"
+            title="Log out"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--stroke)] text-[var(--gray-text)] transition hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)]"
+          >
+            <LogoutIcon className="h-4 w-4" />
+          </button>
         </div>
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {chatMessages.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[var(--stroke)] bg-[var(--surface)] p-4 text-sm text-[var(--gray-text)]">
-              Ask AI to review the board, suggest priorities, or update columns and cards.
+            <div className="rounded-2xl border border-dashed border-[var(--stroke)] bg-[var(--surface)] p-4 text-sm leading-6 text-[var(--gray-text)]">
+              Ask the assistant to review the board, suggest priorities, or update
+              columns and cards.
             </div>
           ) : (
             chatMessages.map((entry, index) => (
@@ -467,17 +474,23 @@ export const AppShell = () => {
                 key={`${entry.role}-${index}`}
                 className={
                   entry.role === "user"
-                    ? "ml-6 rounded-2xl bg-[var(--secondary-purple)] p-3 text-sm text-white"
-                    : "mr-6 rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-3 text-sm text-[var(--navy-dark)]"
+                    ? "ml-8 rounded-2xl rounded-br-sm bg-[var(--secondary-purple)] px-3.5 py-2.5 text-sm leading-6 text-white"
+                    : "mr-8 rounded-2xl rounded-bl-sm border border-[var(--stroke)] bg-[var(--surface)] px-3.5 py-2.5 text-sm leading-6 text-[var(--navy-dark)]"
                 }
               >
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] opacity-80">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] opacity-70">
                   {entry.role === "user" ? "You" : "Assistant"}
                 </p>
                 <p className="whitespace-pre-wrap">{entry.content}</p>
               </article>
             ))
           )}
+          {isSendingChat ? (
+            <p className="mr-8 flex items-center gap-1.5 px-1 text-xs font-medium text-[var(--gray-text)]">
+              <SparkleIcon className="h-3.5 w-3.5 animate-pulse" />
+              Assistant is thinking...
+            </p>
+          ) : null}
         </div>
         <form
           onSubmit={handleSendChat}
@@ -493,9 +506,9 @@ export const AppShell = () => {
             id="ai-chat-input"
             value={chatInput}
             onChange={(event) => setChatInput(event.target.value)}
-            rows={4}
+            rows={3}
             placeholder="Example: Move urgent cards into Review and summarize blockers."
-            className="w-full resize-none rounded-xl border border-[var(--stroke)] px-3 py-2 text-sm outline-none focus:border-[var(--primary-blue)]"
+            className="w-full resize-none rounded-xl border border-[var(--stroke)] px-3 py-2 text-sm leading-6 outline-none transition focus:border-[var(--primary-blue)]"
           />
           {chatError ? (
             <p className="mt-2 text-sm font-medium text-red-600">{chatError}</p>
@@ -503,8 +516,9 @@ export const AppShell = () => {
           <button
             type="submit"
             disabled={isSendingChat || !chatInput.trim()}
-            className="mt-3 w-full rounded-full bg-[var(--secondary-purple)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-[var(--secondary-purple)] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
+            <SendIcon className="h-4 w-4" />
             {isSendingChat ? "Sending..." : "Send"}
           </button>
         </form>

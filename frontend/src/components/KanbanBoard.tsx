@@ -14,8 +14,10 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import clsx from "clsx";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
+import { CheckIcon, SpinnerIcon } from "@/components/icons";
 import { createId, moveCard, type BoardData } from "@/lib/kanban";
 
 type KanbanBoardProps = {
@@ -57,6 +59,7 @@ export const KanbanBoard = ({
   );
 
   const cardsById = useMemo(() => board.cards, [board.cards]);
+  const totalCards = useMemo(() => Object.keys(board.cards).length, [board.cards]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveCardId(event.active.id as string);
@@ -129,48 +132,40 @@ export const KanbanBoard = ({
       <div className="pointer-events-none absolute left-0 top-0 h-[420px] w-[420px] -translate-x-1/3 -translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(32,157,215,0.25)_0%,_rgba(32,157,215,0.05)_55%,_transparent_70%)]" />
       <div className="pointer-events-none absolute bottom-0 right-0 h-[520px] w-[520px] translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(117,57,145,0.18)_0%,_rgba(117,57,145,0.05)_55%,_transparent_75%)]" />
 
-      <main className="relative mx-auto flex min-h-screen max-w-[1500px] flex-col gap-10 px-6 pb-16 pt-12">
-        <header className="flex flex-col gap-6 rounded-[32px] border border-[var(--stroke)] bg-white/80 p-8 shadow-[var(--shadow)] backdrop-blur">
-          <div className="flex flex-wrap items-start justify-between gap-6">
+      <main className="relative mx-auto flex min-h-screen w-full max-w-[1700px] flex-col gap-6 px-6 pb-12 pt-8">
+        <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--stroke)] bg-white/80 px-6 py-4 shadow-[var(--shadow)] backdrop-blur">
+          <div className="flex items-center gap-4">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--navy-dark)] font-display text-lg font-semibold text-white">
+              K
+            </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--gray-text)]">
-                Single Board Kanban
-              </p>
-              <h1 className="mt-3 font-display text-4xl font-semibold text-[var(--navy-dark)]">
+              <h1 className="font-display text-2xl font-semibold leading-tight text-[var(--navy-dark)]">
                 Kanban Studio
               </h1>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--gray-text)]">
-                Keep momentum visible. Rename columns, drag cards between stages,
-                and capture quick notes without getting buried in settings.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
-                Focus
-              </p>
-              <p className="mt-2 text-lg font-semibold text-[var(--primary-blue)]">
-                One board. Five columns. Zero clutter.
+              <p className="text-xs font-medium text-[var(--gray-text)]">
+                {totalCards} cards across {board.columns.length} columns
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4">
-            {board.columns.map((column) => (
-              <div
-                key={column.id}
-                className="flex items-center gap-2 rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--navy-dark)]"
-              >
-                <span className="h-2 w-2 rounded-full bg-[var(--accent-yellow)]" />
-                {column.title}
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]">
-              {isSaving ? "Saving changes..." : "All changes saved"}
-            </p>
+          <div className="flex items-center gap-4">
             {syncError ? (
               <p className="text-sm font-medium text-red-600">{syncError}</p>
             ) : null}
+            <span
+              className={clsx(
+                "flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold",
+                isSaving
+                  ? "bg-[var(--accent-yellow)]/15 text-[var(--accent-yellow)]"
+                  : "bg-emerald-50 text-emerald-600"
+              )}
+            >
+              {isSaving ? (
+                <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckIcon className="h-3.5 w-3.5" />
+              )}
+              {isSaving ? "Saving" : "All changes saved"}
+            </span>
           </div>
         </header>
 
@@ -180,7 +175,7 @@ export const KanbanBoard = ({
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <section className="grid gap-6 lg:grid-cols-5">
+          <section className="grid flex-1 grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
             {board.columns.map((column) => (
               <KanbanColumn
                 key={column.id}
