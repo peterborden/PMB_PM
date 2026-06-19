@@ -74,6 +74,40 @@ describe("KanbanBoard", () => {
     expect(within(card).getByTestId("card-due-date")).toHaveTextContent("Jul 1");
   });
 
+  it("edits an existing card through the editor", async () => {
+    render(<KanbanBoardHarness />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit Align roadmap themes" })
+    );
+
+    const dialog = screen.getByRole("dialog");
+    const titleInput = within(dialog).getByLabelText("Title");
+    await userEvent.clear(titleInput);
+    await userEvent.type(titleInput, "Updated roadmap");
+    await userEvent.type(within(dialog).getByLabelText("Labels"), "urgent");
+    fireEvent.change(within(dialog).getByLabelText("Due date"), {
+      target: { value: "2026-07-01" },
+    });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const card = screen.getByText("Updated roadmap").closest("article")!;
+    expect(within(card).getByText("urgent")).toBeInTheDocument();
+    expect(within(card).getByTestId("card-due-date")).toHaveTextContent("Jul 1");
+  });
+
+  it("deletes a card from the editor", async () => {
+    render(<KanbanBoardHarness />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit Gather customer signals" })
+    );
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Delete card" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Gather customer signals")).not.toBeInTheDocument();
+  });
+
   it("filters cards with the search box", async () => {
     render(<KanbanBoardHarness />);
     expect(screen.getByText("Align roadmap themes")).toBeInTheDocument();

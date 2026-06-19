@@ -3,14 +3,15 @@ import { CSS } from "@dnd-kit/utilities";
 import clsx from "clsx";
 import type { Card } from "@/lib/kanban";
 import { CardMeta } from "@/components/CardMeta";
-import { TrashIcon } from "@/components/icons";
+import { EditIcon, TrashIcon } from "@/components/icons";
 
 type KanbanCardProps = {
   card: Card;
   onDelete: (cardId: string) => void;
+  onEdit: (cardId: string) => void;
 };
 
-export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
+export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: card.id });
 
@@ -36,16 +37,28 @@ export const KanbanCard = ({ card, onDelete }: KanbanCardProps) => {
         <h4 className="font-display text-sm font-semibold leading-5 text-[var(--navy-dark)]">
           {card.title}
         </h4>
-        <button
-          type="button"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => onDelete(card.id)}
-          className="-mr-1 -mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--gray-text)] opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"
-          aria-label={`Delete ${card.title}`}
-          title="Delete card"
-        >
-          <TrashIcon className="h-4 w-4" />
-        </button>
+        <div className="-mr-1 -mt-0.5 flex shrink-0 items-center">
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => onEdit(card.id)}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--gray-text)] opacity-0 transition hover:bg-[var(--primary-blue)]/10 hover:text-[var(--primary-blue)] focus-visible:opacity-100 group-hover:opacity-100"
+            aria-label={`Edit ${card.title}`}
+            title="Edit card"
+          >
+            <EditIcon className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => onDelete(card.id)}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--gray-text)] opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"
+            aria-label={`Delete ${card.title}`}
+            title="Delete card"
+          >
+            <TrashIcon className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <p className="mt-1.5 text-xs leading-5 text-[var(--gray-text)]">
         {card.details}

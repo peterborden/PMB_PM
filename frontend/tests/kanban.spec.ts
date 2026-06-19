@@ -259,6 +259,25 @@ test("adds a card to a column", async ({ page }) => {
   await expect(firstColumn.getByText("Playwright card")).toBeVisible();
 });
 
+test("edits a card via the editor", async ({ page }) => {
+  await installAuthMock(page);
+  await page.goto("/");
+  await loginViaUi(page);
+
+  await page
+    .locator('button[aria-label="Edit Align roadmap themes"]')
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Title").fill("Edited via e2e");
+  await dialog.getByLabel("Labels").fill("urgent");
+  await dialog.getByRole("button", { name: "Save" }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText("Edited via e2e")).toBeVisible();
+  await expect(page.getByText("urgent")).toBeVisible();
+});
+
 test("moves a card between columns", async ({ page }) => {
   await installAuthMock(page);
   await page.goto("/");

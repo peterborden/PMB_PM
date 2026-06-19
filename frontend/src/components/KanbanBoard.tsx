@@ -17,6 +17,7 @@ import {
 import clsx from "clsx";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
+import { CardEditor, type CardEdits } from "@/components/CardEditor";
 import { CheckIcon, SpinnerIcon } from "@/components/icons";
 import {
   cardMatchesQuery,
@@ -61,6 +62,7 @@ export const KanbanBoard = ({
   };
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const sensors = useSensors(
@@ -142,7 +144,37 @@ export const KanbanBoard = ({
     });
   };
 
+  const handleUpdateCard = (cardId: string, edits: CardEdits) => {
+    const existing = board.cards[cardId];
+    if (!existing) {
+      return;
+    }
+    onBoardChange({
+      ...board,
+      cards: {
+        ...board.cards,
+        [cardId]: { ...existing, ...edits },
+      },
+    });
+    setEditingCardId(null);
+  };
+
+  const handleDeleteCardById = (cardId: string) => {
+    onBoardChange({
+      ...board,
+      cards: Object.fromEntries(
+        Object.entries(board.cards).filter(([id]) => id !== cardId)
+      ),
+      columns: board.columns.map((column) => ({
+        ...column,
+        cardIds: column.cardIds.filter((id) => id !== cardId),
+      })),
+    });
+    setEditingCardId(null);
+  };
+
   const activeCard = activeCardId ? cardsById[activeCardId] : null;
+  const editingCard = editingCardId ? board.cards[editingCardId] : null;
   const trimmedQuery = query.trim();
 
   return (
@@ -226,6 +258,7 @@ export const KanbanBoard = ({
                   onRename={handleRenameColumn}
                   onAddCard={handleAddCard}
                   onDeleteCard={handleDeleteCard}
+                  onEditCard={setEditingCardId}
                 />
               );
             })}
@@ -239,6 +272,15 @@ export const KanbanBoard = ({
           </DragOverlay>
         </DndContext>
       </main>
+
+      {editingCard ? (
+        <CardEditor
+          card={editingCard}
+          onSave={(edits) => handleUpdateCard(editingCard.id, edits)}
+          onDelete={() => handleDeleteCardById(editingCard.id)}
+          onClose={() => setEditingCardId(null)}
+        />
+      ) : null}
     </div>
   );
 };

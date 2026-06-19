@@ -34,8 +34,10 @@ tree green (`uv run --project backend pytest`, `npm run test:unit` in
   - Card `labels[]` + `dueDate` added to the shared model (validated, backward
     compatible); AI prompt + AI_CONTRACT updated; label chips + overdue due-date
     badge; creation form inputs; board search filtering by title/details/labels.
-  - Still open here: editing an existing card's labels/dueDate in the UI (only
-    creation + AI can set them today); assignee; description markdown.
+- [x] **Loop 4 — Card editing (commit pending)**
+  - `CardEditor` modal edits an existing card's title/details/labels/dueDate and
+    can delete it; edit affordance on each card. Tested at unit + e2e level.
+  - Still open: assignee, description markdown, board-level activity/empty states.
 - [ ] **Iteration 5 — Hardening + e2e**
   - Playwright flows for register -> create board -> drag cards -> AI edit.
   - Backend e2e for multi-user. Tighten coverage of new code paths.

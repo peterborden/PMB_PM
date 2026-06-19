@@ -14,6 +14,7 @@ integration tests."
 | 1 | Backend foundation | Real user accounts (PBKDF2 hashing), token sessions, multi-board schema (migration 0002) + per-user board CRUD scoped by `user_id`; new auth/board routes; legacy `/api/board` kept on the default board | backend 77 pass |
 | 2 | Frontend multi-board | Typed `lib/api.ts` client; login/register; `BoardSwitcher` (create/rename/delete, last-board guard); AppShell tracks the active board and per-board AI chat; updated unit + Playwright tests | backend 77, FE unit 21, e2e 8 |
 | 3 | Richer cards + search | Card `labels[]` + `dueDate` end to end (model + validators, AI prompt/contract, creation form, label chips + overdue due-date badge); board search box filtering by title/details/labels | backend 85, FE unit 31, e2e 8 |
+| 4 | Card editing | `CardEditor` modal to edit an existing card's title/details/labels/due date and delete it; edit affordance on each card; accessible dialog (Escape/backdrop close) | backend 85, FE unit 38, e2e 9 |
 
 ## Loop details
 
@@ -40,3 +41,13 @@ integration tests."
 - Board search box filters cards by title/details/labels (`cardMatchesQuery`).
 - New tests: backend `test_card_metadata.py`; frontend helpers
   (`cardMatchesQuery`/`isOverdue`/`formatDueDate`) and board create/search.
+
+### Loop 4 - Card editing (this commit)
+- `CardEditor.tsx`: accessible modal (role=dialog, Escape/backdrop close) to edit
+  an existing card's title, details, labels, and due date, plus delete.
+- Each card gained an Edit affordance next to delete; `onEditCard` threads through
+  `KanbanColumn` to `KanbanBoard`, which owns `editingCardId` and applies updates
+  via the normal version-checked board save.
+- New tests: `CardEditor.test.tsx` (prefill, save/parse labels, empty-title guard,
+  Escape/Cancel, clear due date), `KanbanBoard` edit + delete-from-editor, and a
+  Playwright edit flow.
