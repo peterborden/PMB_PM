@@ -38,6 +38,14 @@ tree green (`uv run --project backend pytest`, `npm run test:unit` in
   - `CardEditor` modal edits an existing card's title/details/labels/dueDate and
     can delete it; edit affordance on each card. Tested at unit + e2e level.
   - Still open: assignee, description markdown, board-level activity/empty states.
+- [x] **Loop 5 — Board sharing, backend (commit pending)**
+  - `board_members` table + owner-or-member access; member endpoints; board list
+    carries role/ownerUsername. Repository + integration tests.
+  - Frontend `lib/api.ts` member client added; Share UI still to build.
+- [ ] **Loop 6 — Board sharing UI (frontend)**
+  - Share dialog: list members, add by username, remove; show a "shared by X"
+    indicator for boards where `role === 'editor'`. Restrict owner-only controls.
+
 - [ ] **Iteration 5 — Hardening + e2e**
   - Playwright flows for register -> create board -> drag cards -> AI edit.
   - Backend e2e for multi-user. Tighten coverage of new code paths.

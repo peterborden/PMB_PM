@@ -18,6 +18,15 @@ export type BoardMeta = {
   version: number;
   createdAt: string;
   updatedAt: string;
+  // Sharing metadata (backend loop 5). 'owner' for boards you own, 'editor' for
+  // boards shared with you. Optional so older responses still type-check.
+  role?: "owner" | "editor";
+  ownerUsername?: string | null;
+};
+
+export type BoardMember = {
+  username: string;
+  role: "owner" | "editor";
 };
 
 export type BoardDetail = {
@@ -155,4 +164,27 @@ export const sendBoardChat = (
   request<AIChatResult>(`/api/boards/${boardId}/ai/chat`, {
     method: "POST",
     body: { message, history },
+  });
+
+// ---------------------------------------------------------------------------
+// Board members (sharing)
+// ---------------------------------------------------------------------------
+
+export const listBoardMembers = async (boardId: number): Promise<BoardMember[]> => {
+  const payload = await request<{ members: BoardMember[] }>(
+    `/api/boards/${boardId}/members`
+  );
+  return payload.members;
+};
+
+export const addBoardMember = (boardId: number, username: string) =>
+  request<BoardMember>(`/api/boards/${boardId}/members`, {
+    method: "POST",
+    body: { username },
+  });
+
+export const removeBoardMember = (boardId: number, username: string) =>
+  request<void>(`/api/boards/${boardId}/members/${encodeURIComponent(username)}`, {
+    method: "DELETE",
+    expectNoContent: true,
   });

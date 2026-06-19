@@ -8,10 +8,13 @@ from pydantic import BaseModel
 
 from .ai import AIConfigError, AIRequestError, OpenRouterClient
 from .models import (
+    AddMemberRequest,
     AIChatRequest,
     AIChatResponse,
     BoardDetailResponse,
     BoardListResponse,
+    BoardMember,
+    BoardMembersResponse,
     BoardMeta,
     BoardResponse,
     BoardUpdateRequest,
@@ -23,14 +26,17 @@ from .models import (
 )
 from .repository import initialize_database
 from .services import (
+    add_board_member_for_user,
     create_user_board,
     delete_user_board,
     get_board_detail,
+    list_board_members_for_user,
     list_user_boards,
     login,
     logout,
     read_board,
     register,
+    remove_board_member_for_user,
     rename_user_board,
     require_user,
     run_ai_chat,
@@ -195,6 +201,23 @@ def create_app(
     @app.delete("/api/boards/{board_id}", status_code=204)
     def delete_board_route(board_id: int, request: Request) -> Response:
         delete_user_board(request, board_id, db_path=db_path)
+        return Response(status_code=204)
+
+    @app.get("/api/boards/{board_id}/members", response_model=BoardMembersResponse)
+    def get_board_members(board_id: int, request: Request) -> BoardMembersResponse:
+        return list_board_members_for_user(request, board_id, db_path=db_path)
+
+    @app.post("/api/boards/{board_id}/members", response_model=BoardMember, status_code=201)
+    def post_board_member(
+        board_id: int, request: Request, payload: AddMemberRequest
+    ) -> BoardMember:
+        return add_board_member_for_user(
+            request, board_id, payload.username, payload.role, db_path=db_path
+        )
+
+    @app.delete("/api/boards/{board_id}/members/{username}", status_code=204)
+    def delete_board_member(board_id: int, username: str, request: Request) -> Response:
+        remove_board_member_for_user(request, board_id, username, db_path=db_path)
         return Response(status_code=204)
 
     @app.get("/api/board", response_model=BoardResponse)

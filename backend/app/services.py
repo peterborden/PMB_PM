@@ -9,6 +9,8 @@ from .models import (
     AIChatResponse,
     BoardDetailResponse,
     BoardListResponse,
+    BoardMember,
+    BoardMembersResponse,
     BoardMeta,
     BoardResponse,
     BoardUpdateRequest,
@@ -19,8 +21,11 @@ from .models import (
 from .repository import (
     BoardNotFoundError,
     LastBoardError,
+    ShareError,
     UsernameTakenError,
+    UserNotFoundError,
     VersionConflictError,
+    add_board_member,
     authenticate_user,
     create_board,
     create_session,
@@ -30,7 +35,9 @@ from .repository import (
     get_board_by_id,
     get_default_board_id,
     get_session_user,
+    list_board_members,
     list_boards,
+    remove_board_member,
     rename_board,
     update_board_by_id,
 )
@@ -197,6 +204,58 @@ def delete_user_board(
         raise HTTPException(
             status_code=409, detail="Cannot delete the only remaining board"
         ) from error
+
+
+# ---------------------------------------------------------------------------
+# Board members (sharing)
+# ---------------------------------------------------------------------------
+
+
+def list_board_members_for_user(
+    request: Request, board_id: int, db_path: Path | None = None
+) -> BoardMembersResponse:
+    user = require_user(request, db_path=db_path)
+    try:
+        members = list_board_members(board_id, user["id"], db_path=db_path)
+    except BoardNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Board not found") from error
+    return BoardMembersResponse(members=[BoardMember(**member) for member in members])
+
+
+def add_board_member_for_user(
+    request: Request,
+    board_id: int,
+    username: str,
+    role: str,
+    db_path: Path | None = None,
+) -> BoardMember:
+    user = require_user(request, db_path=db_path)
+    try:
+        member = add_board_member(
+            board_id, user["id"], username, role=role, db_path=db_path
+        )
+    except BoardNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Board not found") from error
+    except UserNotFoundError as error:
+        raise HTTPException(status_code=404, detail="User not found") from error
+    except ShareError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return BoardMember(**member)
+
+
+def remove_board_member_for_user(
+    request: Request,
+    board_id: int,
+    username: str,
+    db_path: Path | None = None,
+) -> None:
+    user = require_user(request, db_path=db_path)
+    try:
+        remove_board_member(board_id, user["id"], username, db_path=db_path)
+    except BoardNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Board not found") from error
+    except UserNotFoundError as error:
+        raise HTTPException(status_code=404, detail="User not found") from error
 
 
 # ---------------------------------------------------------------------------

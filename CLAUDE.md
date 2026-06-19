@@ -10,7 +10,7 @@ Authoritative docs: `docs/PLAN.md` (incremental build plan, all 10 parts complet
 
 ## Invariants (do not violate)
 
-- **Boards belong to users; every board access is scoped by `user_id`.** Repository board functions take `(board_id, user_id)` and raise `BoardNotFoundError` if the board is not owned by that user — never look a board up by id alone. A user always has at least one board; deleting the last one is refused (`LastBoardError`).
+- **Boards belong to one owner (`boards.user_id`) and may be shared with members (`board_members`).** Every board access is scoped by `user_id`: repository read/write functions take `(board_id, user_id)` and raise `BoardNotFoundError` unless the user is the owner OR a member — never look a board up by id alone. Members may read/write board content; **owner-only** actions are rename, delete, and member management. A user always has at least one owned board; deleting the last owned one is refused (`LastBoardError`).
 - **Auth is session-token based.** Login/register mint a row in `sessions` and set the opaque token as the `pm_session` cookie; `resolve_user`/`require_user` look the token up (and check expiry). Passwords are PBKDF2-hashed via `auth.py` — never store or compare plaintext.
 - **Board JSON has one shape** shared by frontend, API, and AI contract (see Board data model below). Validate any board you produce against it.
 - **Every `cardId` in a column must exist in `cards`, and each card's `id` must equal its map key.** `BoardData` enforces this on both client saves and AI output — don't bypass it.
@@ -73,7 +73,8 @@ For exact behavior, read the named symbol — this section is a map, not a spec.
 
 ### HTTP API
 - Auth: `POST /api/auth/register` (`{username,password}` -> creates user + default board, logs in), `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session` (`{authenticated, username}`).
-- Boards: `GET /api/boards` (list metadata), `POST /api/boards` (`{name}` -> 201 metadata), `GET/PUT /api/boards/{id}` (detail / version-checked save), `PATCH /api/boards/{id}` (`{name}` rename), `DELETE /api/boards/{id}` (204; 409 on last board).
+- Boards: `GET /api/boards` (list owned + shared metadata, each with `role`/`ownerUsername`), `POST /api/boards` (`{name}` -> 201 metadata), `GET/PUT /api/boards/{id}` (detail / version-checked save), `PATCH /api/boards/{id}` (`{name}` rename, owner-only), `DELETE /api/boards/{id}` (204; owner-only; 409 on last board).
+- Members: `GET /api/boards/{id}/members` (owner + members; any participant), `POST /api/boards/{id}/members` (`{username}` -> 201, owner-only; 404 unknown user, 400 sharing with owner), `DELETE /api/boards/{id}/members/{username}` (204, owner-only).
 - AI: `POST /api/boards/{id}/ai/chat` (per-board). Legacy `GET/PUT /api/board` and `POST /api/ai/chat` still work and operate on the user's default (first) board — kept for the not-yet-migrated frontend.
 
 ### Board data model (shared shape)

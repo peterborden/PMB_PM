@@ -79,10 +79,35 @@ class BoardMeta(BaseModel):
     version: int
     createdAt: str
     updatedAt: str
+    # 'owner' or 'editor' from the requesting user's perspective.
+    role: str = "owner"
+    ownerUsername: str | None = None
 
 
 class BoardListResponse(BaseModel):
     boards: list[BoardMeta]
+
+
+class AddMemberRequest(BaseModel):
+    username: str
+    role: Literal["editor"] = "editor"
+
+    @field_validator("username")
+    @classmethod
+    def _normalize_username(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Username must not be empty")
+        return trimmed
+
+
+class BoardMember(BaseModel):
+    username: str
+    role: str
+
+
+class BoardMembersResponse(BaseModel):
+    members: list[BoardMember]
 
 
 CARD_MAX_LABELS = 10

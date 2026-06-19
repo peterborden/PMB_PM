@@ -15,6 +15,7 @@ integration tests."
 | 2 | Frontend multi-board | Typed `lib/api.ts` client; login/register; `BoardSwitcher` (create/rename/delete, last-board guard); AppShell tracks the active board and per-board AI chat; updated unit + Playwright tests | backend 77, FE unit 21, e2e 8 |
 | 3 | Richer cards + search | Card `labels[]` + `dueDate` end to end (model + validators, AI prompt/contract, creation form, label chips + overdue due-date badge); board search box filtering by title/details/labels | backend 85, FE unit 31, e2e 8 |
 | 4 | Card editing | `CardEditor` modal to edit an existing card's title/details/labels/due date and delete it; edit affordance on each card; accessible dialog (Escape/backdrop close) | backend 85, FE unit 38, e2e 9 |
+| 5 | Board sharing (backend) | Migration 0003 `board_members`; board read/write broadened to owner-or-member (rename/delete/manage stay owner-only); `GET/POST/DELETE /api/boards/{id}/members`; board list now carries `role`/`ownerUsername` | backend 100, FE unit 38, e2e 9 |
 
 ## Loop details
 
@@ -51,3 +52,19 @@ integration tests."
 - New tests: `CardEditor.test.tsx` (prefill, save/parse labels, empty-title guard,
   Escape/Cancel, clear due date), `KanbanBoard` edit + delete-from-editor, and a
   Playwright edit flow.
+
+### Loop 5 - Board sharing, backend (this commit)
+- Migration `0003`: `board_members` table (board_id, user_id, role); owner stays
+  on `boards.user_id`.
+- Repository: `get_board_by_id`/`update_board_by_id` now grant access to the owner
+  OR a member; `list_boards` returns owned + shared boards each tagged with the
+  caller's `role` and the `ownerUsername`. New `add_board_member`,
+  `list_board_members`, `remove_board_member` (+ `UserNotFoundError`/`ShareError`).
+- Routes: `GET/POST/DELETE /api/boards/{id}/members`. Rename/delete/manage remain
+  owner-only; members can edit board content and run AI chat.
+- Tests: `test_sharing.py` (repository) + `test_sharing_api.py` (HTTP) covering
+  access grants, owner-only guards, validation, and revocation.
+- Frontend `lib/api.ts` gained the member types + client functions (UI lands next
+  loop).
+- Next loop (6): a Share UI in the frontend (member list, add/remove, shared-board
+  indicator in the switcher).

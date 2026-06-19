@@ -102,6 +102,16 @@ class LastBoardError(Exception):
         super().__init__("Cannot delete the only remaining board")
 
 
+class UserNotFoundError(Exception):
+    def __init__(self, username: str):
+        super().__init__(f"No user found: {username}")
+        self.username = username
+
+
+class ShareError(Exception):
+    """Raised for invalid sharing requests (e.g. sharing with the owner)."""
+
+
 def default_db_path() -> Path:
     configured = os.getenv("PM_DB_PATH")
     if configured:
@@ -319,32 +329,48 @@ def delete_session(token: str, db_path: Path | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _board_meta_row_to_dict(row: sqlite3.Row) -> dict:
+def _board_meta_row_to_dict(
+    row: sqlite3.Row, role: str = "owner", owner_username: str | None = None
+) -> dict:
     return {
         "id": row["id"],
         "name": row["name"],
         "version": row["version"],
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
+        "role": role,
+        "ownerUsername": owner_username,
     }
 
 
 def list_boards(user_id: int, db_path: Path | None = None) -> list[dict]:
+    """Boards the user can access: those they own plus those shared with them.
+
+    Owned boards come first (by position), then shared boards (by name). Each row
+    carries the caller's role ('owner' or 'editor') and the owning username.
+    """
     resolved_db_path = initialize_database(db_path)
     connection = _connect(resolved_db_path)
     try:
         rows = connection.execute(
             """
-            SELECT id, name, version, created_at, updated_at
-            FROM boards
-            WHERE user_id = ?
-            ORDER BY position ASC, id ASC
+            SELECT b.id, b.name, b.version, b.created_at, b.updated_at,
+                   ou.username AS owner_username,
+                   CASE WHEN b.user_id = ? THEN 'owner' ELSE 'editor' END AS role
+            FROM boards b
+            JOIN users ou ON ou.id = b.user_id
+            WHERE b.user_id = ?
+               OR b.id IN (SELECT board_id FROM board_members WHERE user_id = ?)
+            ORDER BY (b.user_id = ?) DESC, b.position ASC, b.name ASC, b.id ASC
             """,
-            (user_id,),
+            (user_id, user_id, user_id, user_id),
         ).fetchall()
     finally:
         connection.close()
-    return [_board_meta_row_to_dict(row) for row in rows]
+    return [
+        _board_meta_row_to_dict(row, role=row["role"], owner_username=row["owner_username"])
+        for row in rows
+    ]
 
 
 def create_board(
@@ -372,11 +398,16 @@ def create_board(
         )
         board_id = cursor.lastrowid
         row = connection.execute(
-            "SELECT id, name, version, created_at, updated_at FROM boards WHERE id = ?",
+            """
+            SELECT b.id, b.name, b.version, b.created_at, b.updated_at,
+                   u.username AS owner_username
+            FROM boards b JOIN users u ON u.id = b.user_id
+            WHERE b.id = ?
+            """,
             (board_id,),
         ).fetchone()
         connection.commit()
-        return _board_meta_row_to_dict(row)
+        return _board_meta_row_to_dict(row, owner_username=row["owner_username"])
     except Exception:
         connection.rollback()
         raise
@@ -391,8 +422,14 @@ def get_board_by_id(
     connection = _connect(resolved_db_path)
     try:
         row = connection.execute(
-            "SELECT board_json, version, name FROM boards WHERE id = ? AND user_id = ?",
-            (board_id, user_id),
+            """
+            SELECT board_json, version, name FROM boards
+            WHERE id = ? AND (
+                user_id = ?
+                OR id IN (SELECT board_id FROM board_members WHERE user_id = ?)
+            )
+            """,
+            (board_id, user_id, user_id),
         ).fetchone()
     finally:
         connection.close()
@@ -433,8 +470,14 @@ def update_board_by_id(
     try:
         connection.execute("BEGIN IMMEDIATE")
         row = connection.execute(
-            "SELECT id, version FROM boards WHERE id = ? AND user_id = ?",
-            (board_id, user_id),
+            """
+            SELECT id, version FROM boards
+            WHERE id = ? AND (
+                user_id = ?
+                OR id IN (SELECT board_id FROM board_members WHERE user_id = ?)
+            )
+            """,
+            (board_id, user_id, user_id),
         ).fetchone()
         if row is None:
             connection.rollback()
@@ -482,11 +525,16 @@ def rename_board(
             (name, board_id),
         )
         meta = connection.execute(
-            "SELECT id, name, version, created_at, updated_at FROM boards WHERE id = ?",
+            """
+            SELECT b.id, b.name, b.version, b.created_at, b.updated_at,
+                   u.username AS owner_username
+            FROM boards b JOIN users u ON u.id = b.user_id
+            WHERE b.id = ?
+            """,
             (board_id,),
         ).fetchone()
         connection.commit()
-        return _board_meta_row_to_dict(meta)
+        return _board_meta_row_to_dict(meta, owner_username=meta["owner_username"])
     except Exception:
         connection.rollback()
         raise
@@ -516,6 +564,133 @@ def delete_board(board_id: int, user_id: int, db_path: Path | None = None) -> No
             raise LastBoardError()
 
         connection.execute("DELETE FROM boards WHERE id = ?", (board_id,))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+# ---------------------------------------------------------------------------
+# Board members (sharing)
+# ---------------------------------------------------------------------------
+
+
+def _require_owned_board(connection: sqlite3.Connection, board_id: int, owner_id: int) -> None:
+    row = connection.execute(
+        "SELECT id FROM boards WHERE id = ? AND user_id = ?",
+        (board_id, owner_id),
+    ).fetchone()
+    if row is None:
+        raise BoardNotFoundError(board_id)
+
+
+def add_board_member(
+    board_id: int,
+    owner_id: int,
+    member_username: str,
+    role: str = "editor",
+    db_path: Path | None = None,
+) -> dict:
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        _require_owned_board(connection, board_id, owner_id)
+
+        member = connection.execute(
+            "SELECT id, username FROM users WHERE username = ?",
+            (member_username,),
+        ).fetchone()
+        if member is None:
+            connection.rollback()
+            raise UserNotFoundError(member_username)
+        if member["id"] == owner_id:
+            connection.rollback()
+            raise ShareError("Cannot share a board with its owner")
+
+        connection.execute(
+            """
+            INSERT INTO board_members (board_id, user_id, role)
+            VALUES (?, ?, ?)
+            ON CONFLICT(board_id, user_id) DO UPDATE SET role = excluded.role
+            """,
+            (board_id, member["id"], role),
+        )
+        connection.commit()
+        return {"username": member["username"], "role": role}
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def list_board_members(
+    board_id: int, user_id: int, db_path: Path | None = None
+) -> list[dict]:
+    """Owner first (role 'owner'), then shared members. Any participant may view."""
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        board = connection.execute(
+            """
+            SELECT b.user_id AS owner_id, ou.username AS owner_username
+            FROM boards b
+            JOIN users ou ON ou.id = b.user_id
+            WHERE b.id = ? AND (
+                b.user_id = ?
+                OR b.id IN (SELECT board_id FROM board_members WHERE user_id = ?)
+            )
+            """,
+            (board_id, user_id, user_id),
+        ).fetchone()
+        if board is None:
+            raise BoardNotFoundError(board_id)
+
+        member_rows = connection.execute(
+            """
+            SELECT u.username AS username, m.role AS role
+            FROM board_members m
+            JOIN users u ON u.id = m.user_id
+            WHERE m.board_id = ?
+            ORDER BY u.username ASC
+            """,
+            (board_id,),
+        ).fetchall()
+    finally:
+        connection.close()
+
+    members = [{"username": board["owner_username"], "role": "owner"}]
+    members.extend({"username": row["username"], "role": row["role"]} for row in member_rows)
+    return members
+
+
+def remove_board_member(
+    board_id: int,
+    owner_id: int,
+    member_username: str,
+    db_path: Path | None = None,
+) -> None:
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        _require_owned_board(connection, board_id, owner_id)
+
+        member = connection.execute(
+            "SELECT id FROM users WHERE username = ?",
+            (member_username,),
+        ).fetchone()
+        if member is None:
+            connection.rollback()
+            raise UserNotFoundError(member_username)
+
+        connection.execute(
+            "DELETE FROM board_members WHERE board_id = ? AND user_id = ?",
+            (board_id, member["id"]),
+        )
         connection.commit()
     except Exception:
         connection.rollback()
