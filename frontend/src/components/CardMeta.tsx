@@ -11,8 +11,9 @@ type CardMetaProps = {
 export const CardMeta = ({ card }: CardMetaProps) => {
   const labels = card.labels ?? [];
   const hasDueDate = Boolean(card.dueDate);
+  const assignee = card.assignee ?? "";
 
-  if (labels.length === 0 && !hasDueDate) {
+  if (labels.length === 0 && !hasDueDate && !assignee) {
     return null;
   }
 
@@ -41,6 +42,18 @@ export const CardMeta = ({ card }: CardMetaProps) => {
         >
           {overdue ? "Overdue " : "Due "}
           {formatDueDate(card.dueDate)}
+        </span>
+      ) : null}
+      {assignee ? (
+        <span
+          data-testid="card-assignee"
+          className="ml-auto flex items-center gap-1.5 text-[10px] font-semibold text-[var(--gray-text)]"
+          title={`Assigned to ${assignee}`}
+        >
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--secondary-purple)]/15 text-[10px] font-bold uppercase text-[var(--secondary-purple)]">
+            {assignee.slice(0, 1)}
+          </span>
+          {assignee}
         </span>
       ) : null}
     </div>

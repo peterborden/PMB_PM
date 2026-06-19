@@ -324,6 +324,23 @@ test("shares a board with another user", async ({ page }) => {
   await expect(dialog.getByText("bob", { exact: true })).toBeVisible();
 });
 
+test("assigns a card to a member", async ({ page }) => {
+  await installAuthMock(page);
+  await page.goto("/");
+  await loginViaUi(page);
+
+  await page
+    .locator('button[aria-label="Edit Align roadmap themes"]')
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Assignee").selectOption("user");
+  await dialog.getByRole("button", { name: "Save" }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("card-assignee").first()).toContainText("user");
+});
+
 test("moves a card between columns", async ({ page }) => {
   await installAuthMock(page);
   await page.goto("/");

@@ -6,6 +6,7 @@ export type Card = {
   // fields existed). Matches the backend Card model.
   labels?: string[];
   dueDate?: string | null;
+  assignee?: string | null;
 };
 
 export type Column = {
@@ -213,6 +214,7 @@ export const cardMatchesQuery = (card: Card, query: string): boolean => {
   const haystack = [
     card.title,
     card.details,
+    card.assignee ?? "",
     ...(card.labels ?? []),
   ]
     .join(" ")

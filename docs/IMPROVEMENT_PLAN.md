@@ -46,6 +46,11 @@ tree green (`uv run --project backend pytest`, `npm run test:unit` in
   - `ShareDialog` (member list, add/remove by username, owner-only controls);
     Share button; shared-board indicator + owner-only rename/delete in switcher.
     `ShareDialog` + AppShell + Playwright tests. Sharing now complete end to end.
+- [x] **Loop 7 — Card assignees (commit pending)**
+  - Card `assignee` (member username) end to end: model + AI, assignee chip,
+    member-aware editor select, search-by-assignee. Backend + FE + e2e tests.
+  - Still open: account management (change password / delete account), card
+    description markdown, board activity log.
 
 - [ ] **Iteration 5 — Hardening + e2e**
   - Playwright flows for register -> create board -> drag cards -> AI edit.

@@ -46,7 +46,18 @@ describe("CardEditor", () => {
       details: "Publish the build",
       labels: ["urgent", "backend"],
       dueDate: "2026-07-01",
+      assignee: null,
     });
+  });
+
+  it("assigns the card to a board member", async () => {
+    const props = setup({ assigneeOptions: ["alice", "bob"] });
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText("Assignee"), "bob");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(props.onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ assignee: "bob" })
+    );
   });
 
   it("does not save with an empty title", async () => {

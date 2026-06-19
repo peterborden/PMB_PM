@@ -17,6 +17,7 @@ integration tests."
 | 4 | Card editing | `CardEditor` modal to edit an existing card's title/details/labels/due date and delete it; edit affordance on each card; accessible dialog (Escape/backdrop close) | backend 85, FE unit 38, e2e 9 |
 | 5 | Board sharing (backend) | Migration 0003 `board_members`; board read/write broadened to owner-or-member (rename/delete/manage stay owner-only); `GET/POST/DELETE /api/boards/{id}/members`; board list now carries `role`/`ownerUsername` | backend 100, FE unit 38, e2e 9 |
 | 6 | Board sharing (frontend) | `ShareDialog` (member list, add/remove by username, owner-only controls); Share button; shared-board indicator + owner-only rename/delete in the switcher | backend 100, FE unit 47, e2e 10 |
+| 7 | Card assignees | Card `assignee` (member username) end to end: model + validator, AI prompt/contract, assignee chip on cards, member-aware `<select>` in the editor (options from board members), search includes assignee | backend 103, FE unit 49, e2e 11 |
 
 ## Loop details
 
@@ -81,3 +82,14 @@ integration tests."
 - Tests: `ShareDialog.test.tsx`; AppShell share happy-path + unknown-user error
   (mock server extended with member endpoints); Playwright share flow.
 - This completes board sharing end to end across loops 5-6.
+
+### Loop 7 - Card assignees (this commit)
+- Card model gains optional `assignee` (a board participant's username, trimmed,
+  empty -> null); AI prompt + AI_CONTRACT updated.
+- `CardMeta` shows an assignee avatar chip; `cardMatchesQuery` matches assignee.
+- `CardEditor` has a member-aware assignee `<select>`: AppShell loads the active
+  board's members (effect on board change) and passes their usernames as
+  `assigneeOptions` through `KanbanBoard`. The current assignee is always kept in
+  the option list so out-of-band values stay selectable.
+- Tests: backend `test_card_metadata.py` assignee cases; `CardEditor` assign,
+  `KanbanBoard` assign-shows-chip, search-by-assignee, and a Playwright assign flow.

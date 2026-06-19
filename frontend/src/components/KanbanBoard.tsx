@@ -37,6 +37,8 @@ type KanbanBoardProps = {
   // Optional controls (e.g. the board switcher) rendered in the header.
   toolbar?: ReactNode;
   boardName?: string;
+  // Usernames assignable to cards (board owner + members).
+  assigneeOptions?: string[];
 };
 
 export const KanbanBoard = ({
@@ -46,6 +48,7 @@ export const KanbanBoard = ({
   syncError = null,
   toolbar = null,
   boardName,
+  assigneeOptions = [],
 }: KanbanBoardProps) => {
   const collisionDetection: CollisionDetection = (args) => {
     const pointerIntersections = pointerWithin(args);
@@ -276,6 +279,7 @@ export const KanbanBoard = ({
       {editingCard ? (
         <CardEditor
           card={editingCard}
+          assigneeOptions={assigneeOptions}
           onSave={(edits) => handleUpdateCard(editingCard.id, edits)}
           onDelete={() => handleDeleteCardById(editingCard.id)}
           onClose={() => setEditingCardId(null)}

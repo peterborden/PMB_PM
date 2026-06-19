@@ -49,7 +49,8 @@ The model is instructed to return JSON with this shape:
         "title": "string",
         "details": "string",
         "labels": ["string"],
-        "dueDate": "YYYY-MM-DD or null"
+        "dueDate": "YYYY-MM-DD or null",
+        "assignee": "username or null"
       }
     }
   }

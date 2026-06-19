@@ -40,6 +40,21 @@ def test_card_blank_due_date_becomes_none() -> None:
     assert card.dueDate is None
 
 
+def test_card_defaults_have_no_assignee() -> None:
+    card = Card(id="card-1", title="Title", details="Details")
+    assert card.assignee is None
+
+
+def test_card_accepts_and_trims_assignee() -> None:
+    card = Card(id="card-1", title="Title", details="Details", assignee="  alice ")
+    assert card.assignee == "alice"
+
+
+def test_card_blank_assignee_becomes_none() -> None:
+    card = Card(id="card-1", title="Title", details="Details", assignee="")
+    assert card.assignee is None
+
+
 def test_card_rejects_invalid_due_date() -> None:
     with pytest.raises(ValueError):
         Card(id="card-1", title="Title", details="Details", dueDate="not-a-date")

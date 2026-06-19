@@ -20,10 +20,11 @@ describe("cardMatchesQuery", () => {
     expect(cardMatchesQuery(card(), "   ")).toBe(true);
   });
 
-  it("matches against title, details, and labels (case-insensitive)", () => {
+  it("matches against title, details, labels, and assignee (case-insensitive)", () => {
     expect(cardMatchesQuery(card(), "SHIP")).toBe(true);
     expect(cardMatchesQuery(card(), "publish")).toBe(true);
     expect(cardMatchesQuery(card({ labels: ["urgent"] }), "urgent")).toBe(true);
+    expect(cardMatchesQuery(card({ assignee: "alice" }), "alice")).toBe(true);
   });
 
   it("returns false when nothing matches", () => {

@@ -9,6 +9,7 @@ export type CardEdits = {
   details: string;
   labels: string[];
   dueDate: string | null;
+  assignee: string | null;
 };
 
 type CardEditorProps = {
@@ -16,6 +17,8 @@ type CardEditorProps = {
   onSave: (edits: CardEdits) => void;
   onDelete: () => void;
   onClose: () => void;
+  // Usernames that can be assigned (board owner + members).
+  assigneeOptions?: string[];
 };
 
 const parseLabels = (raw: string): string[] => {
@@ -32,11 +35,23 @@ const parseLabels = (raw: string): string[] => {
     });
 };
 
-export const CardEditor = ({ card, onSave, onDelete, onClose }: CardEditorProps) => {
+export const CardEditor = ({
+  card,
+  onSave,
+  onDelete,
+  onClose,
+  assigneeOptions = [],
+}: CardEditorProps) => {
   const [title, setTitle] = useState(card.title);
   const [details, setDetails] = useState(card.details);
   const [labels, setLabels] = useState((card.labels ?? []).join(", "));
   const [dueDate, setDueDate] = useState(card.dueDate ?? "");
+  const [assignee, setAssignee] = useState(card.assignee ?? "");
+
+  // Always include the current assignee so an out-of-band value stays selectable.
+  const options = Array.from(
+    new Set([...assigneeOptions, ...(card.assignee ? [card.assignee] : [])])
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -59,6 +74,7 @@ export const CardEditor = ({ card, onSave, onDelete, onClose }: CardEditorProps)
       details: details.trim(),
       labels: parseLabels(labels),
       dueDate: dueDate ? dueDate : null,
+      assignee: assignee ? assignee : null,
     });
   };
 
@@ -124,6 +140,21 @@ export const CardEditor = ({ card, onSave, onDelete, onClose }: CardEditorProps)
               onChange={(event) => setDueDate(event.target.value)}
               className="mt-1.5 w-full rounded-xl border border-[var(--stroke)] px-3 py-2 text-sm outline-none focus:border-[var(--primary-blue)]"
             />
+          </label>
+          <label className="block text-sm font-semibold text-[var(--navy-dark)]">
+            Assignee
+            <select
+              value={assignee}
+              onChange={(event) => setAssignee(event.target.value)}
+              className="mt-1.5 w-full rounded-xl border border-[var(--stroke)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--primary-blue)]"
+            >
+              <option value="">Unassigned</option>
+              {options.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="flex items-center justify-end gap-2 pt-2">
             <button

@@ -8,7 +8,13 @@ const getFirstColumn = () => screen.getAllByTestId(/column-/i)[0];
 
 const KanbanBoardHarness = () => {
   const [board, setBoard] = useState<BoardData>(initialData);
-  return <KanbanBoard board={board} onBoardChange={setBoard} />;
+  return (
+    <KanbanBoard
+      board={board}
+      onBoardChange={setBoard}
+      assigneeOptions={["alice", "bob"]}
+    />
+  );
 };
 
 describe("KanbanBoard", () => {
@@ -94,6 +100,20 @@ describe("KanbanBoard", () => {
     const card = screen.getByText("Updated roadmap").closest("article")!;
     expect(within(card).getByText("urgent")).toBeInTheDocument();
     expect(within(card).getByTestId("card-due-date")).toHaveTextContent("Jul 1");
+  });
+
+  it("assigns a card to a member via the editor", async () => {
+    render(<KanbanBoardHarness />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit Align roadmap themes" })
+    );
+
+    const dialog = screen.getByRole("dialog");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Assignee"), "alice");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    const card = screen.getByText("Align roadmap themes").closest("article")!;
+    expect(within(card).getByTestId("card-assignee")).toHaveTextContent("alice");
   });
 
   it("deletes a card from the editor", async () => {

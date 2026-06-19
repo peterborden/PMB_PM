@@ -122,6 +122,22 @@ class Card(BaseModel):
     # valid, so the fields are backward compatible.
     labels: list[str] = Field(default_factory=list)
     dueDate: str | None = None
+    # Username of the assigned board participant (owner or member), or None.
+    assignee: str | None = None
+
+    @field_validator("assignee")
+    @classmethod
+    def _normalize_assignee(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > USERNAME_MAX_LENGTH:
+            raise ValueError(
+                f"assignee must be at most {USERNAME_MAX_LENGTH} characters"
+            )
+        return trimmed
 
     @field_validator("labels")
     @classmethod

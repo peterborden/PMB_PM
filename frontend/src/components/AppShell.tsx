@@ -71,6 +71,8 @@ export const AppShell = () => {
   const [members, setMembers] = useState<BoardMember[]>([]);
   const [membersBusy, setMembersBusy] = useState(false);
   const [membersError, setMembersError] = useState<string | null>(null);
+  // Usernames assignable to cards on the active board (owner + members).
+  const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
 
   const saveQueueRef = useRef(Promise.resolve());
   // Synchronous source of truth for the active board and its version, used as
@@ -98,13 +100,38 @@ export const AppShell = () => {
     setMembersBusy(true);
     setMembersError(null);
     try {
-      setMembers(await listBoardMembers(boardId));
+      const list = await listBoardMembers(boardId);
+      setMembers(list);
+      setAssigneeOptions(list.map((member) => member.username));
     } catch {
       setMembersError("Unable to load members.");
     } finally {
       setMembersBusy(false);
     }
   }, []);
+
+  // Keep the card-assignee options in sync with the active board's members.
+  useEffect(() => {
+    if (authState !== "authenticated" || activeBoardId === null) {
+      setAssigneeOptions([]);
+      return;
+    }
+    let cancelled = false;
+    listBoardMembers(activeBoardId)
+      .then((list) => {
+        if (!cancelled) {
+          setAssigneeOptions(list.map((member) => member.username));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAssigneeOptions([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authState, activeBoardId]);
 
   const handleOpenShare = () => {
     const boardId = activeBoardIdRef.current;
@@ -126,7 +153,9 @@ export const AppShell = () => {
     setMembersError(null);
     try {
       await addBoardMember(boardId, username);
-      setMembers(await listBoardMembers(boardId));
+      const list = await listBoardMembers(boardId);
+      setMembers(list);
+      setAssigneeOptions(list.map((member) => member.username));
     } catch (error) {
       setMembersError(addMemberErrorMessage(error));
     } finally {
@@ -143,7 +172,9 @@ export const AppShell = () => {
     setMembersError(null);
     try {
       await removeBoardMember(boardId, username);
-      setMembers(await listBoardMembers(boardId));
+      const list = await listBoardMembers(boardId);
+      setMembers(list);
+      setAssigneeOptions(list.map((member) => member.username));
     } catch {
       setMembersError("Unable to remove member.");
     } finally {
@@ -623,6 +654,7 @@ export const AppShell = () => {
         syncError={boardSyncError}
         toolbar={boardSwitcher}
         boardName={activeBoardName}
+        assigneeOptions={assigneeOptions}
       />
       <aside className="fixed inset-y-0 right-0 flex w-[360px] flex-col border-l border-[var(--stroke)] bg-white shadow-[-8px_0_18px_rgba(3,33,71,0.06)]">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--stroke)] px-5 py-4">
