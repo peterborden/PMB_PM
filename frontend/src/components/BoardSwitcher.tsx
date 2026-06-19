@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import clsx from "clsx";
-import { EditIcon, PlusIcon, TrashIcon } from "@/components/icons";
+import { EditIcon, PlusIcon, TrashIcon, UsersIcon } from "@/components/icons";
 import type { BoardMeta } from "@/lib/api";
 
 type BoardSwitcherProps = {
@@ -28,7 +28,9 @@ export const BoardSwitcher = ({
   const [draftName, setDraftName] = useState("");
 
   const activeBoard = boards.find((board) => board.id === activeBoardId) ?? null;
-  const canDelete = boards.length > 1;
+  // Rename/delete are owner-only; the backend rejects them for shared boards.
+  const canManage = activeBoard?.role !== "editor";
+  const canDelete = canManage && boards.length > 1;
 
   const startEditing = () => {
     if (!activeBoard) {
@@ -83,6 +85,7 @@ export const BoardSwitcher = ({
           );
         }
 
+        const isShared = board.role === "editor";
         return (
           <button
             key={board.id}
@@ -90,19 +93,30 @@ export const BoardSwitcher = ({
             onClick={() => onSelect(board.id)}
             aria-current={isActive ? "true" : undefined}
             disabled={busy}
+            title={
+              isShared && board.ownerUsername
+                ? `Shared by ${board.ownerUsername}`
+                : undefined
+            }
             className={clsx(
-              "rounded-full px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-60",
+              "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition disabled:opacity-60",
               isActive
                 ? "bg-[var(--navy-dark)] text-white"
                 : "border border-[var(--stroke)] text-[var(--navy-dark)] hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)]"
             )}
           >
+            {isShared ? (
+              <UsersIcon
+                className="h-3.5 w-3.5 opacity-70"
+                aria-label="Shared board"
+              />
+            ) : null}
             {board.name}
           </button>
         );
       })}
 
-      {activeBoard && editingId === null ? (
+      {activeBoard && canManage && editingId === null ? (
         <button
           type="button"
           onClick={startEditing}
@@ -115,7 +129,7 @@ export const BoardSwitcher = ({
         </button>
       ) : null}
 
-      {activeBoard ? (
+      {activeBoard && canManage ? (
         <button
           type="button"
           onClick={() => onDelete(activeBoard.id)}

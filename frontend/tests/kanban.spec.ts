@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const installAuthMock = async (page: Page) => {
   let authenticated = false;
   let boardVersion = 1;
+  const sharedMembers: string[] = [];
   let board = {
     columns: [
       { id: "col-backlog", title: "Backlog", cardIds: ["card-1", "card-2"] },
@@ -100,6 +101,35 @@ const installAuthMock = async (page: Page) => {
         body: JSON.stringify({ boards: [boardMeta()] }),
       });
       return;
+    }
+
+    if (path.includes("/members")) {
+      if (method === "GET") {
+        const members = [
+          { username: "user", role: "owner" },
+          ...sharedMembers.map((username) => ({ username, role: "editor" })),
+        ];
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ members }),
+        });
+        return;
+      }
+      if (method === "POST") {
+        const payload = request.postDataJSON() as { username: string };
+        sharedMembers.push(payload.username);
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({ username: payload.username, role: "editor" }),
+        });
+        return;
+      }
+      if (method === "DELETE") {
+        await route.fulfill({ status: 204, body: "" });
+        return;
+      }
     }
 
     if (path.endsWith("/ai/chat") && method === "POST") {
@@ -276,6 +306,22 @@ test("edits a card via the editor", async ({ page }) => {
   await expect(dialog).toBeHidden();
   await expect(page.getByText("Edited via e2e")).toBeVisible();
   await expect(page.getByText("urgent")).toBeVisible();
+});
+
+test("shares a board with another user", async ({ page }) => {
+  await installAuthMock(page);
+  await page.goto("/");
+  await loginViaUi(page);
+
+  await page.getByRole("button", { name: "Share board" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("user", { exact: true })).toBeVisible();
+
+  await dialog.getByLabel("Username to add").fill("bob");
+  await dialog.getByRole("button", { name: "Add" }).click();
+
+  await expect(dialog.getByText("bob", { exact: true })).toBeVisible();
 });
 
 test("moves a card between columns", async ({ page }) => {

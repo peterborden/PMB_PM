@@ -42,9 +42,10 @@ tree green (`uv run --project backend pytest`, `npm run test:unit` in
   - `board_members` table + owner-or-member access; member endpoints; board list
     carries role/ownerUsername. Repository + integration tests.
   - Frontend `lib/api.ts` member client added; Share UI still to build.
-- [ ] **Loop 6 — Board sharing UI (frontend)**
-  - Share dialog: list members, add by username, remove; show a "shared by X"
-    indicator for boards where `role === 'editor'`. Restrict owner-only controls.
+- [x] **Loop 6 — Board sharing UI (frontend, commit pending)**
+  - `ShareDialog` (member list, add/remove by username, owner-only controls);
+    Share button; shared-board indicator + owner-only rename/delete in switcher.
+    `ShareDialog` + AppShell + Playwright tests. Sharing now complete end to end.
 
 - [ ] **Iteration 5 — Hardening + e2e**
   - Playwright flows for register -> create board -> drag cards -> AI edit.

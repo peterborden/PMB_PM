@@ -59,6 +59,8 @@ const createServer = (options: ServerOptions = {}) => {
       options.boards ??
       [{ id: 1, name: "My Board", version: 1, board: initialData }],
     nextId: 100,
+    knownUsers: new Set(["user", "bob", "carol"]),
+    members: {} as Record<number, string[]>,
   };
 
   const find = (id: number) => state.boards.find((b) => b.id === id);
@@ -96,6 +98,31 @@ const createServer = (options: ServerOptions = {}) => {
       };
       state.boards.push(record);
       return jsonResponse(meta(record), 201);
+    }
+
+    const membersMatch = path.match(/\/api\/boards\/(\d+)\/members(?:\/([^/]+))?$/);
+    if (membersMatch) {
+      const id = Number(membersMatch[1]);
+      const memberName = membersMatch[2];
+      if (method === "GET") {
+        const list = [
+          { username: "user", role: "owner" },
+          ...(state.members[id] ?? []).map((u) => ({ username: u, role: "editor" })),
+        ];
+        return jsonResponse({ members: list });
+      }
+      if (method === "POST") {
+        if (!state.knownUsers.has(body.username)) {
+          return jsonResponse({ detail: "User not found" }, 404);
+        }
+        state.members[id] = [...(state.members[id] ?? []), body.username];
+        return jsonResponse({ username: body.username, role: "editor" }, 201);
+      }
+      if (method === "DELETE" && memberName) {
+        const name = decodeURIComponent(memberName);
+        state.members[id] = (state.members[id] ?? []).filter((u) => u !== name);
+        return new Response(null, { status: 204 });
+      }
     }
 
     const aiMatch = path.match(/\/api\/boards\/(\d+)\/ai\/chat$/);
@@ -297,5 +324,38 @@ describe("AppShell", () => {
     // and the seeded "My Board" card disappears.
     expect(await screen.findByDisplayValue("To Do")).toBeVisible();
     expect(screen.queryByText("Align roadmap themes")).not.toBeInTheDocument();
+  });
+
+  it("shares a board with another user", async () => {
+    createServer({ authenticated: true });
+    render(<AppShell />);
+    expect(await screen.findByRole("heading", { name: "Kanban Studio" })).toBeVisible();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Share board" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("user")).toBeVisible();
+
+    await user.type(within(dialog).getByLabelText("Username to add"), "bob");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    expect(await within(dialog).findByText("bob")).toBeVisible();
+  });
+
+  it("shows an error when sharing with an unknown user", async () => {
+    createServer({ authenticated: true });
+    render(<AppShell />);
+    expect(await screen.findByRole("heading", { name: "Kanban Studio" })).toBeVisible();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Share board" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Username to add"), "ghost");
+    await user.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    expect(
+      await within(dialog).findByText("No user with that username.")
+    ).toBeVisible();
   });
 });

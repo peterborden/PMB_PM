@@ -3,20 +3,25 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { BoardSwitcher } from "@/components/BoardSwitcher";
-import { LogoutIcon, SendIcon, SparkleIcon } from "@/components/icons";
+import { ShareDialog } from "@/components/ShareDialog";
+import { LogoutIcon, SendIcon, SparkleIcon, UsersIcon } from "@/components/icons";
 import type { BoardData } from "@/lib/kanban";
 import { appendMessage, trimChatHistory, type ChatMessage } from "@/lib/aiChat";
 import {
+  addBoardMember,
   ApiError,
+  type BoardMember,
   type BoardMeta,
   createBoard,
   deleteBoard,
   getBoard,
   getSession,
+  listBoardMembers,
   listBoards,
   login as apiLogin,
   logout as apiLogout,
   register as apiRegister,
+  removeBoardMember,
   renameBoard,
   saveBoard,
   sendBoardChat,
@@ -62,6 +67,11 @@ export const AppShell = () => {
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [members, setMembers] = useState<BoardMember[]>([]);
+  const [membersBusy, setMembersBusy] = useState(false);
+  const [membersError, setMembersError] = useState<string | null>(null);
+
   const saveQueueRef = useRef(Promise.resolve());
   // Synchronous source of truth for the active board and its version, used as
   // expectedVersion on saves. Kept in refs (not state) so chained saves never
@@ -79,8 +89,67 @@ export const AppShell = () => {
     };
   }, []);
 
-  const activeBoardName =
-    boards.find((entry) => entry.id === activeBoardId)?.name ?? undefined;
+  const activeBoard = boards.find((entry) => entry.id === activeBoardId) ?? null;
+  const activeBoardName = activeBoard?.name ?? undefined;
+  // role is absent on owned boards from older responses; treat absent as owner.
+  const isActiveBoardOwner = activeBoard?.role !== "editor";
+
+  const loadMembers = useCallback(async (boardId: number) => {
+    setMembersBusy(true);
+    setMembersError(null);
+    try {
+      setMembers(await listBoardMembers(boardId));
+    } catch {
+      setMembersError("Unable to load members.");
+    } finally {
+      setMembersBusy(false);
+    }
+  }, []);
+
+  const handleOpenShare = () => {
+    const boardId = activeBoardIdRef.current;
+    if (boardId === null) {
+      return;
+    }
+    setMembers([]);
+    setMembersError(null);
+    setIsShareOpen(true);
+    void loadMembers(boardId);
+  };
+
+  const handleAddMember = async (username: string) => {
+    const boardId = activeBoardIdRef.current;
+    if (boardId === null) {
+      return;
+    }
+    setMembersBusy(true);
+    setMembersError(null);
+    try {
+      await addBoardMember(boardId, username);
+      setMembers(await listBoardMembers(boardId));
+    } catch (error) {
+      setMembersError(addMemberErrorMessage(error));
+    } finally {
+      setMembersBusy(false);
+    }
+  };
+
+  const handleRemoveMember = async (username: string) => {
+    const boardId = activeBoardIdRef.current;
+    if (boardId === null) {
+      return;
+    }
+    setMembersBusy(true);
+    setMembersError(null);
+    try {
+      await removeBoardMember(boardId, username);
+      setMembers(await listBoardMembers(boardId));
+    } catch {
+      setMembersError("Unable to remove member.");
+    } finally {
+      setMembersBusy(false);
+    }
+  };
 
   const loadBoardDetail = useCallback(async (boardId: number) => {
     setBoardLoadError(null);
@@ -522,15 +591,27 @@ export const AppShell = () => {
   }
 
   const boardSwitcher = (
-    <BoardSwitcher
-      boards={boards}
-      activeBoardId={activeBoardId}
-      onSelect={(id) => void handleSelectBoard(id)}
-      onCreate={() => void handleCreateBoard()}
-      onRename={(id, name) => void handleRenameBoard(id, name)}
-      onDelete={(id) => void handleDeleteBoard(id)}
-      busy={isBoardBusy}
-    />
+    <div className="flex flex-wrap items-center gap-2">
+      <BoardSwitcher
+        boards={boards}
+        activeBoardId={activeBoardId}
+        onSelect={(id) => void handleSelectBoard(id)}
+        onCreate={() => void handleCreateBoard()}
+        onRename={(id, name) => void handleRenameBoard(id, name)}
+        onDelete={(id) => void handleDeleteBoard(id)}
+        busy={isBoardBusy}
+      />
+      <button
+        type="button"
+        onClick={handleOpenShare}
+        aria-label="Share board"
+        title="Share board"
+        className="flex items-center gap-1.5 rounded-full border border-[var(--stroke)] px-3 py-1.5 text-sm font-semibold text-[var(--navy-dark)] transition hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)]"
+      >
+        <UsersIcon className="h-4 w-4" />
+        Share
+      </button>
+    </div>
   );
 
   return (
@@ -629,9 +710,37 @@ export const AppShell = () => {
           </button>
         </form>
       </aside>
+
+      {isShareOpen ? (
+        <ShareDialog
+          boardName={activeBoardName ?? "board"}
+          members={members}
+          isOwner={isActiveBoardOwner}
+          busy={membersBusy}
+          error={membersError}
+          onAdd={(name) => void handleAddMember(name)}
+          onRemove={(name) => void handleRemoveMember(name)}
+          onClose={() => setIsShareOpen(false)}
+        />
+      ) : null}
     </div>
   );
 };
+
+function addMemberErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 404) {
+      return "No user with that username.";
+    }
+    if (error.status === 400) {
+      return "You cannot share a board with its owner.";
+    }
+    if (error.status === 0) {
+      return "Unable to reach server. Try again.";
+    }
+  }
+  return "Unable to add member.";
+}
 
 function authErrorMessage(error: unknown, mode: AuthMode): string {
   if (error instanceof ApiError) {

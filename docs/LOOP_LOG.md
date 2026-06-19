@@ -16,6 +16,7 @@ integration tests."
 | 3 | Richer cards + search | Card `labels[]` + `dueDate` end to end (model + validators, AI prompt/contract, creation form, label chips + overdue due-date badge); board search box filtering by title/details/labels | backend 85, FE unit 31, e2e 8 |
 | 4 | Card editing | `CardEditor` modal to edit an existing card's title/details/labels/due date and delete it; edit affordance on each card; accessible dialog (Escape/backdrop close) | backend 85, FE unit 38, e2e 9 |
 | 5 | Board sharing (backend) | Migration 0003 `board_members`; board read/write broadened to owner-or-member (rename/delete/manage stay owner-only); `GET/POST/DELETE /api/boards/{id}/members`; board list now carries `role`/`ownerUsername` | backend 100, FE unit 38, e2e 9 |
+| 6 | Board sharing (frontend) | `ShareDialog` (member list, add/remove by username, owner-only controls); Share button; shared-board indicator + owner-only rename/delete in the switcher | backend 100, FE unit 47, e2e 10 |
 
 ## Loop details
 
@@ -68,3 +69,15 @@ integration tests."
   loop).
 - Next loop (6): a Share UI in the frontend (member list, add/remove, shared-board
   indicator in the switcher).
+
+### Loop 6 - Board sharing, frontend (this commit)
+- `ShareDialog.tsx`: accessible modal listing members with roles; owners add by
+  username and remove members; non-owners see a read-only list.
+- AppShell: Share button in the board toolbar; loads members via `listBoardMembers`
+  and calls `addBoardMember`/`removeBoardMember`; friendly errors (unknown user,
+  sharing with owner).
+- `BoardSwitcher`: shared boards (`role === 'editor'`) show a people icon + "Shared
+  by X" tooltip; rename/delete controls are hidden for them (owner-only).
+- Tests: `ShareDialog.test.tsx`; AppShell share happy-path + unknown-user error
+  (mock server extended with member endpoints); Playwright share flow.
+- This completes board sharing end to end across loops 5-6.
