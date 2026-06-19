@@ -7,17 +7,37 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 from .ai import AIConfigError, AIRequestError, OpenRouterClient
-from .models import AIChatRequest, AIChatResponse, BoardResponse, BoardUpdateRequest
+from .models import (
+    AIChatRequest,
+    AIChatResponse,
+    BoardDetailResponse,
+    BoardListResponse,
+    BoardMeta,
+    BoardResponse,
+    BoardUpdateRequest,
+    CreateBoardRequest,
+    CredentialsRequest,
+    RegisterRequest,
+    RenameBoardRequest,
+    SessionResponse,
+)
 from .repository import initialize_database
 from .services import (
-    LoginRequest,
+    create_user_board,
+    delete_user_board,
+    get_board_detail,
+    list_user_boards,
     login,
     logout,
     read_board,
-    require_authenticated_username,
+    register,
+    rename_user_board,
+    require_user,
     run_ai_chat,
+    run_ai_chat_for_board,
     save_board,
-    session_authenticated,
+    save_board_detail,
+    session_status,
 )
 
 class AIDiagnosticResponse(BaseModel):
@@ -88,28 +108,31 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/api/auth/session")
-    def auth_session(request: Request) -> dict[str, bool]:
-        return {"authenticated": session_authenticated(request)}
+    @app.get("/api/auth/session", response_model=SessionResponse)
+    def auth_session(request: Request) -> SessionResponse:
+        return session_status(request, db_path=db_path)
 
-    @app.post("/api/auth/login")
-    def auth_login(payload: LoginRequest, response: Response) -> dict[str, bool]:
-        login(payload, response)
-        return {"authenticated": True}
+    @app.post("/api/auth/register", response_model=SessionResponse)
+    def auth_register(payload: RegisterRequest, response: Response) -> SessionResponse:
+        return register(payload, response, db_path=db_path)
 
-    @app.post("/api/auth/logout")
-    def auth_logout(response: Response) -> dict[str, bool]:
-        logout(response)
-        return {"authenticated": False}
+    @app.post("/api/auth/login", response_model=SessionResponse)
+    def auth_login(payload: CredentialsRequest, response: Response) -> SessionResponse:
+        return login(payload, response, db_path=db_path)
+
+    @app.post("/api/auth/logout", response_model=SessionResponse)
+    def auth_logout(request: Request, response: Response) -> SessionResponse:
+        logout(request, response, db_path=db_path)
+        return SessionResponse(authenticated=False)
 
     @app.get("/api/hello")
     def hello(request: Request) -> dict[str, str]:
-        require_authenticated_username(request)
+        require_user(request, db_path=db_path)
         return {"message": "hello world"}
 
     @app.get("/api/ai/diagnostic", response_model=AIDiagnosticResponse)
     def ai_diagnostic(request: Request) -> AIDiagnosticResponse:
-        require_authenticated_username(request)
+        require_user(request, db_path=db_path)
         if resolved_ai_client is None:
             raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY is not configured")
         try:
@@ -130,6 +153,49 @@ def create_app(
             ai_client=resolved_ai_client,
             db_path=db_path,
         )
+
+    @app.post("/api/boards/{board_id}/ai/chat", response_model=AIChatResponse)
+    def board_ai_chat(
+        board_id: int, request: Request, payload: AIChatRequest
+    ) -> AIChatResponse:
+        if resolved_ai_client is None:
+            raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY is not configured")
+        return run_ai_chat_for_board(
+            request=request,
+            board_id=board_id,
+            payload=payload,
+            ai_client=resolved_ai_client,
+            db_path=db_path,
+        )
+
+    @app.get("/api/boards", response_model=BoardListResponse)
+    def get_boards(request: Request) -> BoardListResponse:
+        return list_user_boards(request, db_path=db_path)
+
+    @app.post("/api/boards", response_model=BoardMeta, status_code=201)
+    def post_board(request: Request, payload: CreateBoardRequest) -> BoardMeta:
+        return create_user_board(request, payload.name, db_path=db_path)
+
+    @app.get("/api/boards/{board_id}", response_model=BoardDetailResponse)
+    def get_board_by_id_route(board_id: int, request: Request) -> BoardDetailResponse:
+        return get_board_detail(request, board_id, db_path=db_path)
+
+    @app.put("/api/boards/{board_id}", response_model=BoardDetailResponse)
+    def put_board_by_id(
+        board_id: int, request: Request, payload: BoardUpdateRequest
+    ) -> BoardDetailResponse:
+        return save_board_detail(request, board_id, payload, db_path=db_path)
+
+    @app.patch("/api/boards/{board_id}", response_model=BoardMeta)
+    def patch_board(
+        board_id: int, request: Request, payload: RenameBoardRequest
+    ) -> BoardMeta:
+        return rename_user_board(request, board_id, payload.name, db_path=db_path)
+
+    @app.delete("/api/boards/{board_id}", status_code=204)
+    def delete_board_route(board_id: int, request: Request) -> Response:
+        delete_user_board(request, board_id, db_path=db_path)
+        return Response(status_code=204)
 
     @app.get("/api/board", response_model=BoardResponse)
     def get_board(request: Request) -> BoardResponse:

@@ -95,7 +95,7 @@ def test_live_server_serves_page_and_api() -> None:
             )
             with opener.open(login_request, timeout=3) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-                assert payload == {"authenticated": True}
+                assert payload == {"authenticated": True, "username": "user"}
 
             with opener.open(f"http://127.0.0.1:{port}/api/hello", timeout=3) as response:
                 payload = json.loads(response.read().decode("utf-8"))

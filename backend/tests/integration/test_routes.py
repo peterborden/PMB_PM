@@ -85,7 +85,7 @@ def test_session_endpoint_is_false_without_cookie() -> None:
     client = TestClient(create_app())
     response = client.get("/api/auth/session")
     assert response.status_code == 200
-    assert response.json() == {"authenticated": False}
+    assert response.json() == {"authenticated": False, "username": None}
 
 
 def test_login_rejects_invalid_credentials() -> None:
@@ -105,12 +105,12 @@ def test_login_sets_cookie_and_session_is_true() -> None:
         json={"username": "user", "password": "password"},
     )
     assert login_response.status_code == 200
-    assert login_response.json() == {"authenticated": True}
-    assert "pm_session=authenticated" in login_response.headers["set-cookie"]
+    assert login_response.json() == {"authenticated": True, "username": "user"}
+    assert "pm_session=" in login_response.headers["set-cookie"]
 
     session_response = client.get("/api/auth/session")
     assert session_response.status_code == 200
-    assert session_response.json() == {"authenticated": True}
+    assert session_response.json() == {"authenticated": True, "username": "user"}
 
 
 def test_logout_clears_cookie() -> None:
@@ -122,11 +122,11 @@ def test_logout_clears_cookie() -> None:
 
     logout_response = client.post("/api/auth/logout")
     assert logout_response.status_code == 200
-    assert logout_response.json() == {"authenticated": False}
+    assert logout_response.json() == {"authenticated": False, "username": None}
 
     session_response = client.get("/api/auth/session")
     assert session_response.status_code == 200
-    assert session_response.json() == {"authenticated": False}
+    assert session_response.json() == {"authenticated": False, "username": None}
 
 
 def test_hello_requires_authentication() -> None:

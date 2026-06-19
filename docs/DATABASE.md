@@ -1,26 +1,40 @@
-# Database Design (Part 5)
+# Database Design
 
 ## Goals
 
-- Support one board per signed-in user for MVP
+- Support real user accounts (register/login) with many Kanban boards per user
 - Keep storage simple and reliable using SQLite
 - Store board state as JSON for fast implementation and flexible schema evolution
-- Keep a clear path to future multi-user and richer features
 
-## Recommended SQLite Schema
+## Current SQLite Schema
+
+Migration `0001_init.sql` created `users` + a one-board-per-user `boards` table.
+Migration `0002_users_sessions_boards.sql` added token-based `sessions` and
+rebuilt `boards` to allow many boards per user (added `name` + `position`,
+dropped the `UNIQUE(user_id)` constraint).
 
 ```sql
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
+  password_hash TEXT NOT NULL,   -- PBKDF2-HMAC-SHA256, see backend/app/auth.py
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-CREATE TABLE IF NOT EXISTS boards (
+CREATE TABLE sessions (
+  token TEXT PRIMARY KEY,         -- opaque token carried in the pm_session cookie
+  user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  expires_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE boards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL,       -- no longer UNIQUE: many boards per user
+  name TEXT NOT NULL DEFAULT 'My Board',
+  position INTEGER NOT NULL DEFAULT 0,
   board_json TEXT NOT NULL CHECK (json_valid(board_json)),
   version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -28,8 +42,19 @@ CREATE TABLE IF NOT EXISTS boards (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_boards_user_id ON boards(user_id);
+CREATE INDEX idx_boards_user_id ON boards(user_id);
+CREATE INDEX idx_boards_user_position ON boards(user_id, position);
+CREATE INDEX idx_sessions_user_id ON sessions(user_id);
 ```
+
+## Authentication
+
+- Passwords are hashed with PBKDF2-HMAC-SHA256 (200k iterations, per-user salt)
+  and stored as a self-describing `algo$iterations$salt$hash` string.
+- Login/register insert a `sessions` row and set its `token` as the `pm_session`
+  cookie. Session lookup checks `expires_at`; logout deletes the row.
+- All board access is scoped by `user_id`, so users cannot read or mutate each
+  other's boards.
 
 ## JSON Board Payload Shape
 

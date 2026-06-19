@@ -3,8 +3,12 @@ import os
 import sqlite3
 from pathlib import Path
 
+from .auth import generate_session_token, hash_password, verify_password
+
 MVP_USERNAME = "user"
-MVP_PASSWORD_HASH = "mvp-placeholder-hash"
+MVP_PASSWORD = "password"
+
+SESSION_TTL_SECONDS = 60 * 60 * 24
 
 DEFAULT_BOARD = {
     "columns": [
@@ -63,10 +67,39 @@ DEFAULT_BOARD = {
 }
 
 
+def empty_board() -> dict:
+    """A valid, empty starter board for newly created boards."""
+    return {
+        "columns": [
+            {"id": "col-todo", "title": "To Do", "cardIds": []},
+            {"id": "col-progress", "title": "In Progress", "cardIds": []},
+            {"id": "col-done", "title": "Done", "cardIds": []},
+        ],
+        "cards": {},
+    }
+
+
 class VersionConflictError(Exception):
     def __init__(self, current_version: int):
         super().__init__("Board version conflict")
         self.current_version = current_version
+
+
+class UsernameTakenError(Exception):
+    def __init__(self, username: str):
+        super().__init__(f"Username already taken: {username}")
+        self.username = username
+
+
+class BoardNotFoundError(Exception):
+    def __init__(self, board_id: int):
+        super().__init__(f"No board found with id {board_id}")
+        self.board_id = board_id
+
+
+class LastBoardError(Exception):
+    def __init__(self) -> None:
+        super().__init__("Cannot delete the only remaining board")
 
 
 def default_db_path() -> Path:
@@ -87,6 +120,10 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return connection
 
 
+def _now_expr() -> str:
+    return "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+
+
 def _apply_migrations(connection: sqlite3.Connection) -> None:
     current_version = connection.execute("PRAGMA user_version").fetchone()[0]
     files = sorted(migration_dir().glob("*.sql"))
@@ -104,17 +141,24 @@ def _apply_migrations(connection: sqlite3.Connection) -> None:
 
 def _bootstrap_mvp_data(connection: sqlite3.Connection) -> None:
     user_row = connection.execute(
-        "SELECT id FROM users WHERE username = ?",
+        "SELECT id, password_hash FROM users WHERE username = ?",
         (MVP_USERNAME,),
     ).fetchone()
     if user_row is None:
         cursor = connection.execute(
             "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-            (MVP_USERNAME, MVP_PASSWORD_HASH),
+            (MVP_USERNAME, hash_password(MVP_PASSWORD)),
         )
         user_id = cursor.lastrowid
     else:
         user_id = user_row["id"]
+        # Heal seeded users created before real password hashing existed
+        # (the old bootstrap stored a non-verifiable placeholder hash).
+        if not str(user_row["password_hash"]).startswith("pbkdf2_sha256$"):
+            connection.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (hash_password(MVP_PASSWORD), user_id),
+            )
 
     board_row = connection.execute(
         "SELECT id FROM boards WHERE user_id = ?",
@@ -122,7 +166,10 @@ def _bootstrap_mvp_data(connection: sqlite3.Connection) -> None:
     ).fetchone()
     if board_row is None:
         connection.execute(
-            "INSERT INTO boards (user_id, board_json, version) VALUES (?, ?, 1)",
+            """
+            INSERT INTO boards (user_id, name, position, board_json, version)
+            VALUES (?, 'My Board', 0, ?, 1)
+            """,
             (user_id, json.dumps(DEFAULT_BOARD)),
         )
 
@@ -150,30 +197,233 @@ def initialize_database(db_path: Path | None = None) -> Path:
     return resolved_db_path
 
 
-def get_board(username: str, db_path: Path | None = None) -> tuple[dict, int]:
+# ---------------------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------------------
+
+
+def create_user(username: str, password: str, db_path: Path | None = None) -> int:
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        existing = connection.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if existing is not None:
+            connection.rollback()
+            raise UsernameTakenError(username)
+
+        cursor = connection.execute(
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            (username, hash_password(password)),
+        )
+        user_id = cursor.lastrowid
+        connection.execute(
+            """
+            INSERT INTO boards (user_id, name, position, board_json, version)
+            VALUES (?, 'My Board', 0, ?, 1)
+            """,
+            (user_id, json.dumps(DEFAULT_BOARD)),
+        )
+        connection.commit()
+        return user_id
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def get_user_by_username(username: str, db_path: Path | None = None) -> dict | None:
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        row = connection.execute(
+            "SELECT id, username, password_hash FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+    finally:
+        connection.close()
+    return dict(row) if row is not None else None
+
+
+def authenticate_user(
+    username: str, password: str, db_path: Path | None = None
+) -> dict | None:
+    user = get_user_by_username(username, db_path=db_path)
+    if user is None:
+        return None
+    if not verify_password(password, user["password_hash"]):
+        return None
+    return {"id": user["id"], "username": user["username"]}
+
+
+# ---------------------------------------------------------------------------
+# Sessions
+# ---------------------------------------------------------------------------
+
+
+def create_session(user_id: int, db_path: Path | None = None) -> str:
+    resolved_db_path = initialize_database(db_path)
+    token = generate_session_token()
+    connection = _connect(resolved_db_path)
+    try:
+        connection.execute(
+            f"""
+            INSERT INTO sessions (token, user_id, expires_at)
+            VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+{SESSION_TTL_SECONDS} seconds'))
+            """,
+            (token, user_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return token
+
+
+def get_session_user(token: str, db_path: Path | None = None) -> dict | None:
+    if not token:
+        return None
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        row = connection.execute(
+            f"""
+            SELECT u.id AS id, u.username AS username
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token = ? AND s.expires_at > {_now_expr()}
+            """,
+            (token,),
+        ).fetchone()
+    finally:
+        connection.close()
+    return dict(row) if row is not None else None
+
+
+def delete_session(token: str, db_path: Path | None = None) -> None:
+    if not token:
+        return
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        connection.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+# ---------------------------------------------------------------------------
+# Boards
+# ---------------------------------------------------------------------------
+
+
+def _board_meta_row_to_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "version": row["version"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def list_boards(user_id: int, db_path: Path | None = None) -> list[dict]:
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, name, version, created_at, updated_at
+            FROM boards
+            WHERE user_id = ?
+            ORDER BY position ASC, id ASC
+            """,
+            (user_id,),
+        ).fetchall()
+    finally:
+        connection.close()
+    return [_board_meta_row_to_dict(row) for row in rows]
+
+
+def create_board(
+    user_id: int,
+    name: str,
+    board: dict | None = None,
+    db_path: Path | None = None,
+) -> dict:
+    resolved_db_path = initialize_database(db_path)
+    board_json = json.dumps(board if board is not None else empty_board())
+    connection = _connect(resolved_db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        position_row = connection.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM boards WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        next_position = position_row["next_position"]
+        cursor = connection.execute(
+            """
+            INSERT INTO boards (user_id, name, position, board_json, version)
+            VALUES (?, ?, ?, ?, 1)
+            """,
+            (user_id, name, next_position, board_json),
+        )
+        board_id = cursor.lastrowid
+        row = connection.execute(
+            "SELECT id, name, version, created_at, updated_at FROM boards WHERE id = ?",
+            (board_id,),
+        ).fetchone()
+        connection.commit()
+        return _board_meta_row_to_dict(row)
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def get_board_by_id(
+    board_id: int, user_id: int, db_path: Path | None = None
+) -> tuple[dict, int, str]:
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        row = connection.execute(
+            "SELECT board_json, version, name FROM boards WHERE id = ? AND user_id = ?",
+            (board_id, user_id),
+        ).fetchone()
+    finally:
+        connection.close()
+    if row is None:
+        raise BoardNotFoundError(board_id)
+    return json.loads(row["board_json"]), row["version"], row["name"]
+
+
+def get_default_board_id(user_id: int, db_path: Path | None = None) -> int:
     resolved_db_path = initialize_database(db_path)
     connection = _connect(resolved_db_path)
     try:
         row = connection.execute(
             """
-            SELECT b.board_json, b.version
-            FROM boards b
-            JOIN users u ON u.id = b.user_id
-            WHERE u.username = ?
+            SELECT id FROM boards
+            WHERE user_id = ?
+            ORDER BY position ASC, id ASC
+            LIMIT 1
             """,
-            (username,),
+            (user_id,),
         ).fetchone()
     finally:
         connection.close()
-
     if row is None:
-        raise KeyError(f"No board found for user {username}")
+        raise BoardNotFoundError(0)
+    return row["id"]
 
-    return json.loads(row["board_json"]), row["version"]
 
-
-def update_board(
-    username: str,
+def update_board_by_id(
+    board_id: int,
+    user_id: int,
     board: dict,
     expected_version: int | None,
     db_path: Path | None = None,
@@ -183,17 +433,12 @@ def update_board(
     try:
         connection.execute("BEGIN IMMEDIATE")
         row = connection.execute(
-            """
-            SELECT b.id, b.version
-            FROM boards b
-            JOIN users u ON u.id = b.user_id
-            WHERE u.username = ?
-            """,
-            (username,),
+            "SELECT id, version FROM boards WHERE id = ? AND user_id = ?",
+            (board_id, user_id),
         ).fetchone()
-
         if row is None:
-            raise KeyError(f"No board found for user {username}")
+            connection.rollback()
+            raise BoardNotFoundError(board_id)
 
         current_version = row["version"]
         if expected_version is not None and expected_version != current_version:
@@ -202,15 +447,76 @@ def update_board(
 
         next_version = current_version + 1
         connection.execute(
-            """
+            f"""
             UPDATE boards
-            SET board_json = ?, version = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            SET board_json = ?, version = ?, updated_at = {_now_expr()}
             WHERE id = ?
             """,
-            (json.dumps(board), next_version, row["id"]),
+            (json.dumps(board), next_version, board_id),
         )
         connection.commit()
         return next_version
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def rename_board(
+    board_id: int, user_id: int, name: str, db_path: Path | None = None
+) -> dict:
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT id FROM boards WHERE id = ? AND user_id = ?",
+            (board_id, user_id),
+        ).fetchone()
+        if row is None:
+            connection.rollback()
+            raise BoardNotFoundError(board_id)
+        connection.execute(
+            f"UPDATE boards SET name = ?, updated_at = {_now_expr()} WHERE id = ?",
+            (name, board_id),
+        )
+        meta = connection.execute(
+            "SELECT id, name, version, created_at, updated_at FROM boards WHERE id = ?",
+            (board_id,),
+        ).fetchone()
+        connection.commit()
+        return _board_meta_row_to_dict(meta)
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def delete_board(board_id: int, user_id: int, db_path: Path | None = None) -> None:
+    resolved_db_path = initialize_database(db_path)
+    connection = _connect(resolved_db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT id FROM boards WHERE id = ? AND user_id = ?",
+            (board_id, user_id),
+        ).fetchone()
+        if row is None:
+            connection.rollback()
+            raise BoardNotFoundError(board_id)
+
+        count_row = connection.execute(
+            "SELECT COUNT(*) AS count FROM boards WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if count_row["count"] <= 1:
+            connection.rollback()
+            raise LastBoardError()
+
+        connection.execute("DELETE FROM boards WHERE id = ?", (board_id,))
+        connection.commit()
     except Exception:
         connection.rollback()
         raise

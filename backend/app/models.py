@@ -1,6 +1,87 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+USERNAME_MIN_LENGTH = 3
+USERNAME_MAX_LENGTH = 32
+PASSWORD_MIN_LENGTH = 8
+BOARD_NAME_MAX_LENGTH = 80
+
+
+class CredentialsRequest(BaseModel):
+    username: str
+    password: str
+
+    @field_validator("username")
+    @classmethod
+    def _normalize_username(cls, value: str) -> str:
+        return value.strip()
+
+
+class RegisterRequest(CredentialsRequest):
+    @field_validator("username")
+    @classmethod
+    def _validate_username(cls, value: str) -> str:
+        value = value.strip()
+        if not (USERNAME_MIN_LENGTH <= len(value) <= USERNAME_MAX_LENGTH):
+            raise ValueError(
+                f"Username must be between {USERNAME_MIN_LENGTH} and {USERNAME_MAX_LENGTH} characters"
+            )
+        if not all(char.isalnum() or char in {"-", "_", "."} for char in value):
+            raise ValueError(
+                "Username may only contain letters, numbers, '-', '_', and '.'"
+            )
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, value: str) -> str:
+        if len(value) < PASSWORD_MIN_LENGTH:
+            raise ValueError(
+                f"Password must be at least {PASSWORD_MIN_LENGTH} characters"
+            )
+        return value
+
+
+class SessionResponse(BaseModel):
+    authenticated: bool
+    username: str | None = None
+
+
+class BoardName(BaseModel):
+    name: str = Field(default="My Board")
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Board name must not be empty")
+        if len(value) > BOARD_NAME_MAX_LENGTH:
+            raise ValueError(
+                f"Board name must be at most {BOARD_NAME_MAX_LENGTH} characters"
+            )
+        return value
+
+
+class CreateBoardRequest(BoardName):
+    pass
+
+
+class RenameBoardRequest(BoardName):
+    pass
+
+
+class BoardMeta(BaseModel):
+    id: int
+    name: str
+    version: int
+    createdAt: str
+    updatedAt: str
+
+
+class BoardListResponse(BaseModel):
+    boards: list[BoardMeta]
 
 
 class Card(BaseModel):
@@ -57,6 +138,13 @@ class BoardData(BaseModel):
 
 
 class BoardResponse(BaseModel):
+    board: BoardData
+    version: int
+
+
+class BoardDetailResponse(BaseModel):
+    id: int
+    name: str
     board: BoardData
     version: int
 
