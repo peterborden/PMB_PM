@@ -1,28 +1,40 @@
 ## Backend Overview
 
-The backend is a FastAPI service used as the server foundation for the Project Management MVP.
+The backend is a FastAPI service for the Project Management MVP. It serves the
+exported frontend and provides the JSON API for auth, the Kanban board, and the
+AI assistant. The MVP (PLAN.md Parts 1-10) is complete.
 
-### Current Scope (Part 6)
+### API Endpoints
 
-- Serves the exported frontend static build at `/`
-- Exposes JSON API endpoints:
-  - `/api/health` for service health
-  - `/api/auth/session` for login state checks
-  - `/api/auth/login` for credential sign-in
-  - `/api/auth/logout` for session clear
-  - `/api/hello` protected hello-world payload
-  - `/api/board` (GET/PUT) for authenticated board read/update
-  - `/api/ai/diagnostic` for OpenRouter `2+2` connectivity checks
-  - `/api/ai/chat` for structured AI reply + optional board update
-- Uses `uv` project management via `backend/pyproject.toml`
-- Includes unit, integration, and e2e test suites under `backend/tests`
-- Uses fallback frontend route handling for non-API paths
-- Uses cookie-based MVP auth (`user` / `password`)
-- Uses SQLite persistence with migration/bootstrap flow
-- Separates models, services, and data access in `backend/app/`
-- Uses OpenRouter client with timeout and error handling for AI calls
-- Uses structured AI output validation before applying board changes
+- `GET /api/health` - service health
+- `GET /api/auth/session` - login state check
+- `POST /api/auth/login` - cookie sign-in (`user` / `password`)
+- `POST /api/auth/logout` - clear session
+- `GET /api/hello` - protected hello-world payload
+- `GET /api/board` / `PUT /api/board` - authenticated board read/update with
+  optimistic concurrency (`version` / `expectedVersion`, 409 on conflict)
+- `GET /api/ai/diagnostic` - OpenRouter `2+2` connectivity check
+- `POST /api/ai/chat` - structured AI reply plus optional board update
+- `GET /{path:path}` - fallback that serves the static frontend export
 
-### Planned Evolution
+### Structure (`backend/app/`)
 
-- Add AI routes using OpenRouter
+- `main.py` - app factory (`create_app`) and route definitions; maps exceptions
+  to HTTP status codes
+- `services.py` - auth and request orchestration; owns the cookie session and
+  hardcoded MVP credentials
+- `repository.py` - SQLite access; idempotent DB init (migrations via
+  `PRAGMA user_version`), MVP user/board bootstrap, optimistic-locked updates
+- `models.py` - Pydantic models; `BoardData` enforces board integrity
+  (referenced cards exist, ids match keys, unique columns, no duplicate
+  placement or orphan cards) on every write path
+- `ai.py` - `OpenRouterClient` (model `openai/gpt-oss-120b`); requests JSON
+  output and validates structured results before applying board changes
+
+### Conventions
+
+- Managed with `uv` (`backend/pyproject.toml`); run tests with
+  `uv run --project backend pytest` from the repo root or `backend/`
+  (`backend/conftest.py` handles the import path)
+- Tests live under `backend/tests/{unit,integration,e2e}`; the live OpenRouter
+  e2e test is env-gated

@@ -52,7 +52,8 @@ Overall the MVP is well-structured: clean route/service/repository layering, a s
 
 ## Low / Maintainability
 
-### L1. `initialize_database()` runs on every board read and write
+### L1. `initialize_database()` runs on every board read and write — STATUS: FIXED (2026-06-16)
+> Gated with a module-level `_initialized_paths` set so init (migrations + bootstrap) runs once per DB path; subsequent reads/writes skip straight to their own connection.
 - **Where:** `backend/app/repository.py:get_board`, `update_board` both call `initialize_database`, which opens a connection, globs/applies migrations, and bootstraps on **every** call.
 - **Action:** Run initialization once at startup (it is already called in `create_app`) and have `get_board`/`update_board` assume an initialized DB, or guard with a module-level "initialized" flag. Minor for SQLite/MVP scale but easy to fix.
 
@@ -60,21 +61,25 @@ Overall the MVP is well-structured: clean route/service/repository layering, a s
 - **Where:** `backend/app/repository.py:DEFAULT_BOARD` and `frontend/src/lib/kanban.ts:initialData` are byte-for-byte the same board; the frontend now loads from the API, so `initialData` is effectively dead at runtime.
 - **Action:** Confirm `initialData` is only used by tests; if so, move it into the test fixture or clearly mark it test-only to prevent drift between two "source of truth" boards.
 
-### L3. Backend `AGENTS.md` is stale (says "Current Scope (Part 6)", "Planned: add AI routes")
+### L3. Backend `AGENTS.md` is stale (says "Current Scope (Part 6)", "Planned: add AI routes") — STATUS: FIXED (2026-06-16)
+> Rewritten to reflect the completed Part 10 scope (full endpoint list, module responsibilities, test/uv conventions).
 - **Where:** `backend/AGENTS.md`.
 - **Problem:** AI routes, board API, and structured chat are all implemented (Part 10 complete per `docs/PLAN.md`), but the doc still frames AI as planned future work.
 - **Action:** Update to reflect the current Part 10 scope, or delete in favor of `CLAUDE.md` + `docs/`.
 
-### L4. Unused/extra secrets in `.env`
+### L4. Unused/extra secrets in `.env` — STATUS: FIXED (2026-06-16)
+> Removed `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`; only `OPENROUTER_API_KEY` remains. (`.env` is gitignored and was never committed.)
 - **Where:** `.env` contains `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `OPENROUTER_API_KEY`; only `OPENROUTER_API_KEY` is read (`backend/app/ai.py`).
 - **Action:** Remove the two unused keys to follow least-privilege and avoid shipping unnecessary secrets into the container via `env_file`. (`.env` is correctly gitignored and absent from history — verified.)
 
-### L5. AI error fallback pollutes conversation history
+### L5. AI error fallback pollutes conversation history — STATUS: FIXED (2026-06-16)
+> `ChatMessage` gained a `transient` flag; the error notice is appended with `transient: true`, and `trimChatHistory` filters transient messages out of the payload sent to the AI (still rendered in the thread).
 - **Where:** `frontend/src/components/AppShell.tsx:248-256`.
 - **Problem:** On a failed chat request, a synthetic assistant message ("I could not process that request...") is appended to `chatMessages`, which then gets sent as real assistant context in the next request's `history`.
 - **Action:** Track transient error messages separately (or flag them) so they are rendered but excluded from `trimChatHistory` payloads.
 
-### L6. Unnecessary indirection: `json_loads` / `json_dumps` wrappers with inline imports
+### L6. Unnecessary indirection: `json_loads` / `json_dumps` wrappers with inline imports — STATUS: FIXED (2026-06-16)
+> Removed both wrappers; `ai.py` imports `json` at module top and calls `json.loads`/`json.dumps` directly.
 - **Where:** `backend/app/ai.py` defines `json_loads`/`json_dumps` that `import json` inside the function body.
 - **Action:** Import `json` at module top and call it directly; drop the wrappers. Minor simplification consistent with the project's "keep it simple" standard.
 

@@ -1,12 +1,27 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) working in this repo. This file is loaded into the agent's context every session, so it holds **rules, commands, and pointers** — not narrative. Human-facing rationale lives in `docs/` and the `AGENTS.md` files; this file links to them rather than restating them.
 
 ## What this is
 
-A Project Management MVP: a single-board Kanban app with cookie-based sign-in and an AI sidebar chat that can read and rewrite the board. Next.js frontend, FastAPI backend, SQLite storage, OpenRouter for AI. Designed to run as one Docker container in production-style local use, with a two-server mode for development.
+A Project Management MVP: a single-board Kanban app with cookie-based sign-in and an AI sidebar chat that can read and rewrite the board. Next.js frontend, FastAPI backend, SQLite storage, OpenRouter for AI. Runs as one Docker container in production-style local use, with a two-server mode for development.
 
-Authoritative docs live in `docs/`: `PLAN.md` (the incremental build plan, all 10 parts complete), `AI_CONTRACT.md` (the `/api/ai/chat` request/output/response schemas), `DATABASE.md` (schema and storage rationale). Component-level guides are in `AGENTS.md` files at the root, `backend/`, `frontend/`, and `scripts/`.
+Authoritative docs: `docs/PLAN.md` (incremental build plan, all 10 parts complete), `docs/AI_CONTRACT.md` (`/api/ai/chat` schemas), `docs/DATABASE.md` (schema + storage rationale). Component guides: `AGENTS.md` at root, `backend/`, `frontend/`, `scripts/`.
+
+## Invariants (do not violate)
+
+- **One board per user.** There is no multi-board path; don't add one.
+- **Board JSON has one shape** shared by frontend, API, and AI contract (see Board data model below). Validate any board you produce against it.
+- **Every `cardId` in a column must exist in `cards`, and each card's `id` must equal its map key.** `BoardData` enforces this on both client saves and AI output — don't bypass it.
+- **All writes are version-checked.** Reads return a `version`; writes pass `expectedVersion`; a mismatch is a `VersionConflictError` -> HTTP 409. After any save or AI update, the frontend must refresh from the canonical board/version in the response — never assume the local copy is current.
+- **Routes stay thin.** `main.py` only defines routes and maps exceptions to status codes; logic goes in `services.py` and below.
+
+## Don'ts (defaults that will bite you)
+
+- **Don't point the frontend at an absolute backend URL.** Dev fetches must stay relative (`/api/...`). In dev, `next dev` proxies `/api/*` to `:8000` via `rewrites()` to keep requests same-origin so the `pm_session` cookie flows without CORS. An absolute URL breaks the cookie.
+- **Don't over-engineer.** No defensive code, no speculative abstractions, no unrequested features.
+- **Don't guess when debugging.** Find the root cause with evidence before fixing.
+- **No emojis, anywhere.**
 
 ## Commands
 
@@ -36,45 +51,42 @@ npm run test:e2e       # playwright (auto-starts dev server on :3000)
 npm run test:all
 ```
 
-The backend uses `uv` (no separate venv activation needed). Frontend config is mode-dependent (`frontend/next.config.ts`): in production it is a Next.js **static export** (`output: "export"`) served by FastAPI from `frontend/out` (same origin); in development `next dev` instead proxies `/api/*` to the backend on `:8000` via `rewrites()`, keeping requests same-origin so the session cookie flows without CORS. Because of this, dev fetches must stay relative (`/api/...`) — do not point the frontend at an absolute backend URL in local mode.
+The backend uses `uv` (no separate venv activation). Frontend config is mode-dependent (`frontend/next.config.ts`): production is a Next.js **static export** (`output: "export"`) served by FastAPI from `frontend/out` (same origin); development uses `next dev` with the `/api/*` proxy described in Don'ts.
 
 ## Architecture
 
-### Request flow and serving model
-`backend/app/main.py:create_app` builds the FastAPI app and mounts everything. All API routes are under `/api/*`; a catch-all `GET /{path:path}` serves the static frontend export for any non-API path (with SPA-style fallback to `index.html`). In the container the export is at `/app/frontend-out` via `FRONTEND_STATIC_DIR`; locally it falls back to `frontend/out`. If the export is missing, the catch-all returns a 503 placeholder page instead of crashing.
+For exact behavior, read the named symbol — this section is a map, not a spec.
 
-`create_app` takes optional `frontend_static_dir`, `db_path`, and `ai_client` parameters — this is the seam tests use to inject a temp DB and a fake AI client.
+### Request flow and serving model
+`backend/app/main.py:create_app` builds the app and mounts everything. All API routes are under `/api/*`; a catch-all `GET /{path:path}` serves the static frontend export (SPA-style fallback to `index.html`), or a 503 placeholder if the export is missing. Container path is `/app/frontend-out` via `FRONTEND_STATIC_DIR`; locally it falls back to `frontend/out`.
+
+`create_app(frontend_static_dir?, db_path?, ai_client?)` — the optional params are the seam tests use to inject a temp DB and a fake AI client.
 
 ### Backend layering (`backend/app/`)
-Routes are thin and delegate downward:
-- `main.py` — route definitions only; translates exceptions to HTTP status codes.
-- `services.py` — auth + request orchestration (`login`/`logout`, `read_board`/`save_board`, `run_ai_chat`). Owns the cookie session (`pm_session`) and the hardcoded `user`/`password` credentials. `require_authenticated_username` is the auth gate; it returns the MVP username used for board lookup.
-- `repository.py` — all SQLite access. `initialize_database` is idempotent: it creates the DB file, applies migrations by `PRAGMA user_version`, and bootstraps the MVP user + a seeded `DEFAULT_BOARD` if absent. **It is called on every board read/write**, so the DB self-heals if deleted. Writes use `update_board` with optimistic concurrency via a `version` integer.
-- `models.py` — Pydantic models. `BoardData` enforces internal consistency (every `cardId` in a column must exist in `cards`, and each card's `id` must match its map key). This validation runs on both client saves and AI output.
-- `ai.py` — `OpenRouterClient` (built from env via `from_env`). Model defaults to `openai/gpt-oss-120b`; configurable via `OPENROUTER_MODEL`/`OPENROUTER_BASE_URL`/`OPENROUTER_TIMEOUT_SECONDS`. Raises `AIConfigError` (-> 503) and `AIRequestError` (-> 502).
+- `main.py` — route definitions only; exceptions -> HTTP status codes.
+- `services.py` — auth + orchestration: `login`/`logout`, `read_board`/`save_board`, `run_ai_chat`. Owns the `pm_session` cookie and the hardcoded `user`/`password` credentials. `require_authenticated_username` is the auth gate and returns the MVP username used for board lookup.
+- `repository.py` — all SQLite access. `initialize_database` is idempotent (creates the DB file, applies migrations by `PRAGMA user_version`, bootstraps the MVP user + seeded `DEFAULT_BOARD`); it runs on the first board read/write per DB path (memoized via `_initialized_paths`), so a missing DB self-heals on startup. `update_board` does the version-checked write (see Invariants).
+- `models.py` — Pydantic models. `BoardData` enforces the board consistency invariant.
+- `ai.py` — `OpenRouterClient` (`from_env`). Model defaults to `openai/gpt-oss-120b`; configurable via `OPENROUTER_MODEL`/`OPENROUTER_BASE_URL`/`OPENROUTER_TIMEOUT_SECONDS`. Raises `AIConfigError` (-> 503) and `AIRequestError` (-> 502).
 
 ### Board data model (shared shape)
-The board is a single JSON document stored in `boards.board_json`, the same shape used by the frontend, the API, and the AI contract:
+Stored as one JSON document in `boards.board_json`:
 ```
-{ "columns": [{ "id, title, cardIds: [] }], "cards": { "card-id": { id, title, details } } }
+{ "columns": [{ "id": "...", "title": "...", "cardIds": ["card-id"] }],
+  "cards": { "card-id": { "id": "card-id", "title": "...", "details": "..." } } }
 ```
-Cards are a normalized map; columns own the ordering via `cardIds`. There is one board per user.
-
-### Optimistic concurrency (important when editing save logic)
-Every board read returns a `version`. Writes pass `expectedVersion`; if it doesn't match the stored version, `update_board` raises `VersionConflictError` -> HTTP 409. The frontend must refresh from the canonical board/version in the response after any save or AI update. The AI chat flow reads the current version, applies the model's `updatedBoard`, and persists with that version — so concurrent edits during an AI call surface as 409s.
+Cards are a normalized map; columns own ordering via `cardIds`.
 
 ### AI chat flow
-`POST /api/ai/chat` (see `docs/AI_CONTRACT.md` for exact schemas). `run_ai_chat` injects the full current board JSON + conversation history into the prompt. The model is instructed to return strict JSON `{ reply, updatedBoard|null }`. `ai.py` strips markdown fences, extracts the JSON object, and validates it against `BoardAssistantOutput`/`BoardData` before anything is persisted. If `updatedBoard` is null, the board is returned unchanged with `boardUpdated: false`.
+`POST /api/ai/chat` (exact schemas in `docs/AI_CONTRACT.md`). `run_ai_chat` injects the full current board JSON + conversation history, instructs the model to return strict JSON `{ reply, updatedBoard|null }`, then `ai.py` strips markdown fences, extracts the JSON object, and validates against `BoardAssistantOutput`/`BoardData` before persisting. `updatedBoard: null` returns the board unchanged with `boardUpdated: false`. The flow reads the current version and persists with it, so concurrent edits during an AI call surface as 409s.
 
 ### Frontend (`frontend/src/`)
-Next.js App Router + React 19 + Tailwind v4, drag-and-drop via `@dnd-kit`. `components/AppShell.tsx` is the top-level controller: it gates on auth, loads the board from `/api/board`, persists edits with version-aware saves, and hosts the AI chat panel. `KanbanBoard`/`KanbanColumn`/`KanbanCard` are presentation controlled by AppShell state. `lib/kanban.ts` holds board types and `moveCard` (within- and cross-column move logic); `lib/aiChat.ts` holds chat history helpers. See `frontend/AGENTS.md` for the full component map.
+Next.js App Router + React 19 + Tailwind v4, drag-and-drop via `@dnd-kit`. `components/AppShell.tsx` is the top-level controller: gates on auth, loads the board from `/api/board`, persists version-aware saves, hosts the AI chat panel. `KanbanBoard`/`KanbanColumn`/`KanbanCard` are presentation controlled by AppShell state. `lib/kanban.ts` holds board types and `moveCard` (within- and cross-column moves); `lib/aiChat.ts` holds chat history helpers. Full component map: `frontend/AGENTS.md`.
 
-## Conventions (from AGENTS.md)
+## Conventions
 
-- Keep it simple; do not over-engineer or add defensive code or unrequested features.
-- When debugging, find the root cause with evidence before fixing — do not guess.
-- No emojis, anywhere.
-- Color tokens (in `frontend/src/app/globals.css`): accent yellow `#ecad0a`, blue `#209dd7`, purple `#753991`, navy `#032147`, gray text `#888888`.
+- Color tokens (`frontend/src/app/globals.css`): accent yellow `#ecad0a`, blue `#209dd7`, purple `#753991`, navy `#032147`, gray text `#888888`.
+- (Code-style and simplicity rules are under Don'ts above.)
 
 ## Config
 

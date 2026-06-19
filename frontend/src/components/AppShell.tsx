@@ -311,7 +311,8 @@ export const AppShell = () => {
         appendMessage(
           prev,
           "assistant",
-          "I could not process that request right now. Please try again."
+          "I could not process that request right now. Please try again.",
+          true
         )
       );
     } finally {

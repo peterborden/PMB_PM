@@ -129,8 +129,14 @@ def _bootstrap_mvp_data(connection: sqlite3.Connection) -> None:
     connection.commit()
 
 
+_initialized_paths: set[Path] = set()
+
+
 def initialize_database(db_path: Path | None = None) -> Path:
     resolved_db_path = db_path or default_db_path()
+    if resolved_db_path in _initialized_paths:
+        return resolved_db_path
+
     resolved_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     connection = _connect(resolved_db_path)
@@ -140,6 +146,7 @@ def initialize_database(db_path: Path | None = None) -> Path:
     finally:
         connection.close()
 
+    _initialized_paths.add(resolved_db_path)
     return resolved_db_path
 
 

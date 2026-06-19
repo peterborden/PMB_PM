@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -70,7 +71,7 @@ def _parse_json_from_text(text: str) -> dict[str, Any]:
         stripped = stripped.strip()
 
     try:
-        parsed = json_loads(stripped)
+        parsed = json.loads(stripped)
         if isinstance(parsed, dict):
             return parsed
     except ValueError:
@@ -83,19 +84,13 @@ def _parse_json_from_text(text: str) -> dict[str, Any]:
 
     snippet = stripped[start : end + 1]
     try:
-        parsed = json_loads(snippet)
+        parsed = json.loads(snippet)
     except ValueError as error:
         raise AIRequestError("AI response was not valid JSON") from error
 
     if not isinstance(parsed, dict):
         raise AIRequestError("AI response JSON was not an object")
     return parsed
-
-
-def json_loads(value: str) -> Any:
-    import json
-
-    return json.loads(value)
 
 
 @dataclass
@@ -148,7 +143,7 @@ class OpenRouterClient:
             '{"reply":"string","updatedBoard":<board object or null>}. '
             "If no board change is needed, set updatedBoard to null."
         )
-        board_context = json_dumps(board)
+        board_context = json.dumps(board, ensure_ascii=True, separators=(",", ":"))
         prompt = (
             "Current board JSON:\n"
             f"{board_context}\n\n"
@@ -225,9 +220,3 @@ class OpenRouterClient:
             raise AIRequestError("OpenRouter response was not valid JSON") from error
 
         return parse_chat_response(response_payload)
-
-
-def json_dumps(value: Any) -> str:
-    import json
-
-    return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
