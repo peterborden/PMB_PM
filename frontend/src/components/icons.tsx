@@ -61,3 +61,10 @@ export const SpinnerIcon = (props: SVGProps<SVGSVGElement>) => (
     <path d="M12 3a9 9 0 1 0 9 9" />
   </svg>
 );
+
+export const EditIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg {...baseProps} {...props}>
+    <path d="M4 20h4l10-10a2 2 0 0 0-3-3L5 17v3z" />
+    <path d="M13.5 6.5l3 3" />
+  </svg>
+);

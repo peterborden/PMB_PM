@@ -59,22 +59,61 @@ const installAuthMock = async (page: Page) => {
     },
   };
 
-  await page.route("**/api/board", async (route) => {
+  const BOARD_ID = 1;
+  const boardMeta = () => ({
+    id: BOARD_ID,
+    name: "My Board",
+    version: boardVersion,
+    createdAt: "2026-06-19T00:00:00.000Z",
+    updatedAt: "2026-06-19T00:00:00.000Z",
+  });
+  const boardDetail = () => ({
+    id: BOARD_ID,
+    name: "My Board",
+    version: boardVersion,
+    board,
+  });
+  const unauthorized = (route: Parameters<Parameters<Page["route"]>[1]>[0]) =>
+    route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Authentication required" }),
+    });
+
+  // Catch-all for the boards API: list, single-board detail, and per-board AI
+  // chat. `**/api/boards**` matches /api/boards, /api/boards/1, and
+  // /api/boards/1/ai/chat; routing branches on path + method.
+  await page.route("**/api/boards**", async (route) => {
     if (!authenticated) {
-      await route.fulfill({
-        status: 401,
-        contentType: "application/json",
-        body: JSON.stringify({ detail: "Authentication required" }),
-      });
+      await unauthorized(route);
       return;
     }
 
     const request = route.request();
-    if (request.method() === "GET") {
+    const method = request.method();
+    const path = new URL(request.url()).pathname;
+
+    if (path === "/api/boards" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ boards: [boardMeta()] }),
+      });
+      return;
+    }
+
+    if (path.endsWith("/ai/chat") && method === "POST") {
+      const payload = request.postDataJSON() as { message?: string };
+      const nextBoard = structuredClone(board);
+      nextBoard.columns[0].title = "AI Backlog";
+      board = nextBoard;
+      boardVersion += 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+          reply: `Handled: ${payload.message ?? ""}`,
+          boardUpdated: true,
           board,
           version: boardVersion,
         }),
@@ -82,7 +121,16 @@ const installAuthMock = async (page: Page) => {
       return;
     }
 
-    if (request.method() === "PUT") {
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(boardDetail()),
+      });
+      return;
+    }
+
+    if (method === "PUT") {
       const payload = request.postDataJSON() as {
         board: typeof board;
         expectedVersion?: number;
@@ -105,10 +153,7 @@ const installAuthMock = async (page: Page) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({
-          board,
-          version: boardVersion,
-        }),
+        body: JSON.stringify(boardDetail()),
       });
       return;
     }
@@ -124,7 +169,10 @@ const installAuthMock = async (page: Page) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ authenticated }),
+      body: JSON.stringify({
+        authenticated,
+        username: authenticated ? "user" : null,
+      }),
     });
   });
 
@@ -138,7 +186,7 @@ const installAuthMock = async (page: Page) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ authenticated: true }),
+        body: JSON.stringify({ authenticated: true, username: "user" }),
       });
       return;
     }
@@ -155,35 +203,7 @@ const installAuthMock = async (page: Page) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ authenticated: false }),
-    });
-  });
-
-  await page.route("**/api/ai/chat", async (route) => {
-    if (!authenticated) {
-      await route.fulfill({
-        status: 401,
-        contentType: "application/json",
-        body: JSON.stringify({ detail: "Authentication required" }),
-      });
-      return;
-    }
-    const payload = route.request().postDataJSON() as {
-      message?: string;
-    };
-    const nextBoard = structuredClone(board);
-    nextBoard.columns[0].title = "AI Backlog";
-    board = nextBoard;
-    boardVersion += 1;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        reply: `Handled: ${payload.message ?? ""}`,
-        boardUpdated: true,
-        board,
-        version: boardVersion,
-      }),
+      body: JSON.stringify({ authenticated: false, username: null }),
     });
   });
 };

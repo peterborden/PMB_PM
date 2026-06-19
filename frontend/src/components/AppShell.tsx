@@ -2,57 +2,71 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { KanbanBoard } from "@/components/KanbanBoard";
+import { BoardSwitcher } from "@/components/BoardSwitcher";
 import { LogoutIcon, SendIcon, SparkleIcon } from "@/components/icons";
 import type { BoardData } from "@/lib/kanban";
 import { appendMessage, trimChatHistory, type ChatMessage } from "@/lib/aiChat";
+import {
+  ApiError,
+  type BoardMeta,
+  createBoard,
+  deleteBoard,
+  getBoard,
+  getSession,
+  listBoards,
+  login as apiLogin,
+  logout as apiLogout,
+  register as apiRegister,
+  renameBoard,
+  saveBoard,
+  sendBoardChat,
+} from "@/lib/api";
 
 type AuthState = "loading" | "authenticated" | "unauthenticated";
+type AuthMode = "login" | "register";
 
-type LoginForm = {
+type CredentialsForm = {
   username: string;
   password: string;
 };
 
-const initialForm: LoginForm = {
+const initialForm: CredentialsForm = {
   username: "",
   password: "",
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-const withApiBase = (path: string) => `${API_BASE_URL}${path}`;
+const NEW_BOARD_NAME = "Untitled board";
 
 // Text edits (column rename) persist on a trailing debounce so typing does not
 // fire a board save per keystroke.
 const SAVE_DEBOUNCE_MS = 500;
 
-type BoardApiPayload = {
-  board: BoardData;
-  version: number;
-};
-
-type AIChatPayload = {
-  reply: string;
-  boardUpdated: boolean;
-  board: BoardData;
-  version: number;
-};
-
 export const AppShell = () => {
   const [authState, setAuthState] = useState<AuthState>("loading");
-  const [form, setForm] = useState<LoginForm>(initialForm);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [form, setForm] = useState<CredentialsForm>(initialForm);
+  const [username, setUsername] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [boards, setBoards] = useState<BoardMeta[]>([]);
+  const [activeBoardId, setActiveBoardId] = useState<number | null>(null);
   const [board, setBoard] = useState<BoardData | null>(null);
   const [boardLoadError, setBoardLoadError] = useState<string | null>(null);
   const [isSavingBoard, setIsSavingBoard] = useState(false);
+  const [isBoardBusy, setIsBoardBusy] = useState(false);
   const [boardSyncError, setBoardSyncError] = useState<string | null>(null);
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+
   const saveQueueRef = useRef(Promise.resolve());
-  // Synchronous source of truth for the board version used as expectedVersion on
-  // saves. Kept in a ref (not state) so chained saves never read a stale value.
+  // Synchronous source of truth for the active board and its version, used as
+  // expectedVersion on saves. Kept in refs (not state) so chained saves never
+  // read a stale value between renders.
+  const activeBoardIdRef = useRef<number | null>(null);
   const boardVersionRef = useRef<number | null>(null);
   const renameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<BoardData | null>(null);
@@ -65,44 +79,58 @@ export const AppShell = () => {
     };
   }, []);
 
-  const loadBoard = useCallback(async () => {
+  const activeBoardName =
+    boards.find((entry) => entry.id === activeBoardId)?.name ?? undefined;
+
+  const loadBoardDetail = useCallback(async (boardId: number) => {
     setBoardLoadError(null);
     try {
-      const response = await fetch(withApiBase("/api/board"), {
-        credentials: "same-origin",
-      });
-      if (!response.ok) {
-        throw new Error("Board load failed.");
-      }
-      const payload = (await response.json()) as BoardApiPayload;
-      setBoard(payload.board);
-      boardVersionRef.current = payload.version;
+      const detail = await getBoard(boardId);
+      activeBoardIdRef.current = detail.id;
+      boardVersionRef.current = detail.version;
+      setActiveBoardId(detail.id);
+      setBoard(detail.board);
       setBoardSyncError(null);
     } catch {
       setBoardLoadError("Unable to load board. Please try again.");
     }
   }, []);
 
+  const refreshBoards = useCallback(
+    async (preferredId?: number) => {
+      const list = await listBoards();
+      setBoards(list);
+      if (list.length === 0) {
+        return;
+      }
+      const target =
+        list.find((entry) => entry.id === preferredId) ??
+        list.find((entry) => entry.id === activeBoardIdRef.current) ??
+        list[0];
+      await loadBoardDetail(target.id);
+    },
+    [loadBoardDetail]
+  );
+
+  // Initial session check.
   useEffect(() => {
     let mounted = true;
     const loadSession = async () => {
       try {
-        const response = await fetch(withApiBase("/api/auth/session"), {
-          credentials: "same-origin",
-        });
-        if (!response.ok) {
-          throw new Error("Session check failed.");
-        }
-        const payload = (await response.json()) as { authenticated: boolean };
+        const session = await getSession();
         if (!mounted) {
           return;
         }
-        setAuthState(payload.authenticated ? "authenticated" : "unauthenticated");
+        if (session.authenticated) {
+          setUsername(session.username);
+          setAuthState("authenticated");
+        } else {
+          setAuthState("unauthenticated");
+        }
       } catch {
-        if (!mounted) {
-          return;
+        if (mounted) {
+          setAuthState("unauthenticated");
         }
-        setAuthState("unauthenticated");
       }
     };
 
@@ -112,65 +140,62 @@ export const AppShell = () => {
     };
   }, []);
 
+  // Load boards once authenticated.
   useEffect(() => {
     if (authState !== "authenticated") {
       return;
     }
-    void loadBoard();
-  }, [authState, loadBoard]);
+    void refreshBoards();
+  }, [authState, refreshBoards]);
 
-  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
     setErrorMessage(null);
 
     try {
-      const response = await fetch(withApiBase("/api/auth/login"), {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username: form.username,
-          password: form.password,
-        }),
-      });
-
-      if (!response.ok) {
-        setErrorMessage("Invalid username or password.");
-        return;
-      }
-
-      setAuthState("authenticated");
+      const session =
+        authMode === "register"
+          ? await apiRegister(form.username, form.password)
+          : await apiLogin(form.username, form.password);
+      setUsername(session.username);
       setForm(initialForm);
-    } catch {
-      setErrorMessage("Unable to reach server. Try again.");
+      setAuthState("authenticated");
+    } catch (error) {
+      setErrorMessage(authErrorMessage(error, authMode));
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const resetBoardState = () => {
+    if (renameDebounceRef.current) {
+      clearTimeout(renameDebounceRef.current);
+      renameDebounceRef.current = null;
+    }
+    pendingSaveRef.current = null;
+    activeBoardIdRef.current = null;
+    boardVersionRef.current = null;
+    setBoards([]);
+    setActiveBoardId(null);
+    setBoard(null);
+    setBoardLoadError(null);
+    setBoardSyncError(null);
+    setChatMessages([]);
+    setChatInput("");
+    setChatError(null);
+  };
+
   const handleLogout = async () => {
     setErrorMessage(null);
     try {
-      await fetch(withApiBase("/api/auth/logout"), {
-        method: "POST",
-        credentials: "same-origin",
-      });
+      await apiLogout();
+    } catch {
+      // Logging out locally is safe even if the request fails.
     } finally {
-      if (renameDebounceRef.current) {
-        clearTimeout(renameDebounceRef.current);
-        renameDebounceRef.current = null;
-      }
-      pendingSaveRef.current = null;
-      setBoard(null);
-      boardVersionRef.current = null;
-      setBoardLoadError(null);
-      setBoardSyncError(null);
-      setChatMessages([]);
-      setChatInput("");
-      setChatError(null);
+      resetBoardState();
+      setUsername(null);
+      setAuthMode("login");
       setAuthState("unauthenticated");
     }
   };
@@ -179,52 +204,40 @@ export const AppShell = () => {
     (nextBoard: BoardData) => {
       saveQueueRef.current = saveQueueRef.current
         .then(async () => {
+          const boardId = activeBoardIdRef.current;
           const expectedVersion = boardVersionRef.current;
-          if (expectedVersion === null) {
+          if (boardId === null || expectedVersion === null) {
             return;
           }
 
           setIsSavingBoard(true);
-          const response = await fetch(withApiBase("/api/board"), {
-            method: "PUT",
-            credentials: "same-origin",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              board: nextBoard,
-              expectedVersion,
-            }),
-          });
-
-          if (response.status === 409) {
-            setBoardSyncError("Board changed elsewhere. Reloaded latest state.");
-            await loadBoard();
-            return;
+          try {
+            const detail = await saveBoard(boardId, nextBoard, expectedVersion);
+            // Only adopt the response if the user has not switched boards.
+            if (activeBoardIdRef.current === boardId) {
+              setBoard(detail.board);
+              boardVersionRef.current = detail.version;
+            }
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 409) {
+              setBoardSyncError("Board changed elsewhere. Reloaded latest state.");
+              if (activeBoardIdRef.current === boardId) {
+                await loadBoardDetail(boardId);
+              }
+              return;
+            }
+            setBoardSyncError("Unable to save board changes.");
           }
-
-          if (!response.ok) {
-            throw new Error("Save failed");
-          }
-
-          const payload = (await response.json()) as BoardApiPayload;
-          setBoard(payload.board);
-          // Update the version ref synchronously so the next queued save sends a
-          // current expectedVersion instead of waiting for a re-render.
-          boardVersionRef.current = payload.version;
-        })
-        .catch(() => {
-          setBoardSyncError("Unable to save board changes.");
         })
         .finally(() => {
           setIsSavingBoard(false);
         });
     },
-    [loadBoard]
+    [loadBoardDetail]
   );
 
-  // Persist any debounced edit immediately (e.g. before sending an AI request so
-  // the assistant sees the latest board).
+  // Persist any debounced edit immediately (e.g. before sending an AI request or
+  // switching boards so the latest edit is not lost).
   const flushPendingSave = useCallback(() => {
     if (renameDebounceRef.current) {
       clearTimeout(renameDebounceRef.current);
@@ -266,10 +279,82 @@ export const AppShell = () => {
     [enqueueSave]
   );
 
+  const handleSelectBoard = useCallback(
+    async (boardId: number) => {
+      if (boardId === activeBoardIdRef.current) {
+        return;
+      }
+      setIsBoardBusy(true);
+      try {
+        flushPendingSave();
+        await saveQueueRef.current;
+        setChatMessages([]);
+        setChatError(null);
+        await loadBoardDetail(boardId);
+      } finally {
+        setIsBoardBusy(false);
+      }
+    },
+    [flushPendingSave, loadBoardDetail]
+  );
+
+  const handleCreateBoard = useCallback(async () => {
+    setIsBoardBusy(true);
+    try {
+      const created = await createBoard(NEW_BOARD_NAME);
+      setChatMessages([]);
+      setChatError(null);
+      await refreshBoards(created.id);
+    } catch {
+      setBoardSyncError("Unable to create a new board.");
+    } finally {
+      setIsBoardBusy(false);
+    }
+  }, [refreshBoards]);
+
+  const handleRenameBoard = useCallback(
+    async (boardId: number, name: string) => {
+      try {
+        const meta = await renameBoard(boardId, name);
+        setBoards((prev) =>
+          prev.map((entry) => (entry.id === boardId ? { ...entry, name: meta.name } : entry))
+        );
+      } catch {
+        setBoardSyncError("Unable to rename board.");
+      }
+    },
+    []
+  );
+
+  const handleDeleteBoard = useCallback(
+    async (boardId: number) => {
+      setIsBoardBusy(true);
+      try {
+        await deleteBoard(boardId);
+        if (boardId === activeBoardIdRef.current) {
+          activeBoardIdRef.current = null;
+          setChatMessages([]);
+          setChatError(null);
+        }
+        await refreshBoards();
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          setBoardSyncError("You must keep at least one board.");
+        } else {
+          setBoardSyncError("Unable to delete board.");
+        }
+      } finally {
+        setIsBoardBusy(false);
+      }
+    },
+    [refreshBoards]
+  );
+
   const handleSendChat = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = chatInput.trim();
-    if (!message || isSendingChat) {
+    const boardId = activeBoardIdRef.current;
+    if (!message || isSendingChat || boardId === null) {
       return;
     }
 
@@ -285,27 +370,13 @@ export const AppShell = () => {
       await saveQueueRef.current;
 
       const history = trimChatHistory(chatMessages);
-      const response = await fetch(withApiBase("/api/ai/chat"), {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message,
-          history,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("chat failed");
+      const result = await sendBoardChat(boardId, message, history);
+      setChatMessages((prev) => appendMessage(prev, "assistant", result.reply));
+      if (activeBoardIdRef.current === boardId) {
+        setBoard(result.board);
+        boardVersionRef.current = result.version;
+        setBoardSyncError(null);
       }
-
-      const payload = (await response.json()) as AIChatPayload;
-      setChatMessages((prev) => appendMessage(prev, "assistant", payload.reply));
-      setBoard(payload.board);
-      boardVersionRef.current = payload.version;
-      setBoardSyncError(null);
     } catch {
       setChatError("Unable to complete AI chat request.");
       setChatMessages((prev) =>
@@ -332,19 +403,22 @@ export const AppShell = () => {
   }
 
   if (authState === "unauthenticated") {
+    const isRegister = authMode === "register";
     return (
       <main className="flex min-h-screen items-center justify-center px-6 py-12">
         <section className="w-full max-w-md rounded-3xl border border-[var(--stroke)] bg-white p-8 shadow-[var(--shadow)]">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--gray-text)]">
-            Project Management MVP
+            Project Management
           </p>
           <h1 className="mt-4 font-display text-3xl font-semibold text-[var(--navy-dark)]">
-            Sign in
+            {isRegister ? "Create account" : "Sign in"}
           </h1>
           <p className="mt-2 text-sm text-[var(--gray-text)]">
-            Sign in to access your board.
+            {isRegister
+              ? "Create an account to start building boards."
+              : "Sign in to access your boards."}
           </p>
-          <form className="mt-6 space-y-4" onSubmit={handleLogin}>
+          <form className="mt-6 space-y-4" onSubmit={handleAuthSubmit}>
             <label className="block text-sm font-semibold text-[var(--navy-dark)]">
               Username
               <input
@@ -368,7 +442,7 @@ export const AppShell = () => {
                   setForm((prev) => ({ ...prev, password: event.target.value }))
                 }
                 className="mt-2 w-full rounded-xl border border-[var(--stroke)] px-3 py-2 outline-none focus:border-[var(--primary-blue)]"
-                autoComplete="current-password"
+                autoComplete={isRegister ? "new-password" : "current-password"}
                 required
               />
             </label>
@@ -380,9 +454,27 @@ export const AppShell = () => {
               disabled={isSubmitting}
               className="w-full rounded-full bg-[var(--secondary-purple)] px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isSubmitting ? "Signing in..." : "Sign in"}
+              {isSubmitting
+                ? isRegister
+                  ? "Creating..."
+                  : "Signing in..."
+                : isRegister
+                  ? "Create account"
+                  : "Sign in"}
             </button>
           </form>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode(isRegister ? "login" : "register");
+              setErrorMessage(null);
+            }}
+            className="mt-5 text-sm font-semibold text-[var(--primary-blue)] transition hover:underline"
+          >
+            {isRegister
+              ? "Have an account? Sign in"
+              : "Need an account? Create one"}
+          </button>
         </section>
       </main>
     );
@@ -400,7 +492,7 @@ export const AppShell = () => {
             <button
               type="button"
               onClick={() => {
-                void loadBoard();
+                void refreshBoards();
               }}
               className="rounded-full bg-[var(--secondary-purple)] px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:brightness-110"
             >
@@ -429,6 +521,18 @@ export const AppShell = () => {
     );
   }
 
+  const boardSwitcher = (
+    <BoardSwitcher
+      boards={boards}
+      activeBoardId={activeBoardId}
+      onSelect={(id) => void handleSelectBoard(id)}
+      onCreate={() => void handleCreateBoard()}
+      onRename={(id, name) => void handleRenameBoard(id, name)}
+      onDelete={(id) => void handleDeleteBoard(id)}
+      busy={isBoardBusy}
+    />
+  );
+
   return (
     <div className="relative pr-[360px]">
       <KanbanBoard
@@ -436,6 +540,8 @@ export const AppShell = () => {
         onBoardChange={persistBoardUpdate}
         isSaving={isSavingBoard || isSendingChat}
         syncError={boardSyncError}
+        toolbar={boardSwitcher}
+        boardName={activeBoardName}
       />
       <aside className="fixed inset-y-0 right-0 flex w-[360px] flex-col border-l border-[var(--stroke)] bg-white shadow-[-8px_0_18px_rgba(3,33,71,0.06)]">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--stroke)] px-5 py-4">
@@ -448,7 +554,7 @@ export const AppShell = () => {
                 AI Assistant
               </h2>
               <p className="text-xs font-medium text-[var(--gray-text)]">
-                Reads and rewrites your board
+                {username ? `Signed in as ${username}` : "Reads and rewrites your board"}
               </p>
             </div>
           </div>
@@ -526,3 +632,22 @@ export const AppShell = () => {
     </div>
   );
 };
+
+function authErrorMessage(error: unknown, mode: AuthMode): string {
+  if (error instanceof ApiError) {
+    if (mode === "register") {
+      if (error.status === 409) {
+        return "That username is already taken.";
+      }
+      if (error.status === 422) {
+        return "Username must be 3-32 characters and password at least 8.";
+      }
+    } else if (error.status === 401) {
+      return "Invalid username or password.";
+    }
+    if (error.status === 0) {
+      return "Unable to reach server. Try again.";
+    }
+  }
+  return "Something went wrong. Please try again.";
+}

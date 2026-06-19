@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import {
   type CollisionDetection,
   DndContext,
@@ -28,6 +28,9 @@ type KanbanBoardProps = {
   ) => void;
   isSaving?: boolean;
   syncError?: string | null;
+  // Optional controls (e.g. the board switcher) rendered in the header.
+  toolbar?: ReactNode;
+  boardName?: string;
 };
 
 export const KanbanBoard = ({
@@ -35,6 +38,8 @@ export const KanbanBoard = ({
   onBoardChange,
   isSaving = false,
   syncError = null,
+  toolbar = null,
+  boardName,
 }: KanbanBoardProps) => {
   const collisionDetection: CollisionDetection = (args) => {
     const pointerIntersections = pointerWithin(args);
@@ -143,10 +148,16 @@ export const KanbanBoard = ({
                 Kanban Studio
               </h1>
               <p className="text-xs font-medium text-[var(--gray-text)]">
+                {boardName ? `${boardName} - ` : ""}
                 {totalCards} cards across {board.columns.length} columns
               </p>
             </div>
           </div>
+          {toolbar ? (
+            <div className="flex min-w-0 flex-1 items-center justify-center">
+              {toolbar}
+            </div>
+          ) : null}
           <div className="flex items-center gap-4">
             {syncError ? (
               <p className="text-sm font-medium text-red-600">{syncError}</p>

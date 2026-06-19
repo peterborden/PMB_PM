@@ -20,15 +20,16 @@ tree green (`uv run --project backend pytest`, `npm run test:unit` in
 
 ## Next iterations (suggested order)
 
-- [ ] **Iteration 2 — Frontend auth + API client**
-  - Register screen (in addition to login); show signed-in username + logout.
-  - `frontend/src/lib/api.ts` (or similar) typed client for the new endpoints.
-  - Keep dev fetches relative (`/api/...`) — see CLAUDE.md Don'ts.
-- [ ] **Iteration 3 — Frontend multi-board UI**
-  - Board switcher/sidebar listing `/api/boards`; create/rename/delete.
-  - AppShell loads a selected board via `/api/boards/{id}`, saves version-aware,
-    and points AI chat at `/api/boards/{id}/ai/chat`. Retire legacy `/api/board`
-    usage from the frontend once migrated.
+- [x] **Iteration 2 — Frontend auth + multi-board UI (this commit)**
+  - `frontend/src/lib/api.ts`: typed client for auth/boards/AI chat (`ApiError`).
+  - Register screen + login toggle; signed-in username shown in the AI panel.
+  - `components/BoardSwitcher.tsx`: board tabs with select/create/rename/delete
+    (last-board guard), rendered in the `KanbanBoard` header `toolbar` slot.
+  - AppShell rewritten to list boards, track the active board, save version-aware
+    via `/api/boards/{id}`, and chat via `/api/boards/{id}/ai/chat`. Frontend no
+    longer calls the legacy `/api/board` route.
+  - Tests: rewrote `AppShell.test.tsx` (in-memory server) + `BoardSwitcher.test.tsx`
+    + updated Playwright `kanban.spec.ts` to the new endpoints. 21 unit + 8 e2e green.
 - [ ] **Iteration 4 — Card-level features**
   - Candidates: card labels/tags, due dates, assignee, description markdown,
     card search/filter. Extend `BoardData` (keep the shared shape in sync across
