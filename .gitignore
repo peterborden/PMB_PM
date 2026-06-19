@@ -174,3 +174,6 @@ cython_debug/
 
 .DS_Store
 
+
+# Ralph loop local state
+.claude/ralph-loop.local.md
